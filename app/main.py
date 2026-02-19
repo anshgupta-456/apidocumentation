@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.middleware.loggig_middleware import loggingMiddleware
+from app.middleware.logging_middleware import LoggingMiddleware
 from app.database.session import engine
 from app.database.base import Base
 
@@ -9,7 +9,7 @@ app = FastAPI(title=" API Contract Validator")
 Base.metadata.create_all(bind=engine)
 
 # adding logging middleware
-app.add_middleware(loggingMiddleware)
+app.add_middleware(LoggingMiddleware)
 
 
 # Sameple Business endpoints
