@@ -2,6 +2,7 @@ import time
 import json
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from app.database.session import SessionLocal
 from app.database.models import ApiLog
 
@@ -17,28 +18,30 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         except:
             request_body = None
 
+        # --- Capture response correctly ---
         response = await call_next(request)
 
-        # Capture response body
-        response_body = b""
+        # IMPORTANT: Read the body safely
+        resp_body = b""
         async for chunk in response.body_iterator:
-            response_body += chunk
+            resp_body += chunk
 
-        response = response.__class__(
-            content=response_body,
+        # Reconstruct response
+        final_response = Response(
+            content=resp_body,
             status_code=response.status_code,
             headers=dict(response.headers),
             media_type=response.media_type
         )
 
         try:
-            parsed_response = json.loads(response_body)
+            parsed_response = json.loads(resp_body)
         except:
             parsed_response = None
 
         latency = int((time.time() - start_time) * 1000)
 
-        # Save to DB
+        # --- Save to DB ---
         db = SessionLocal()
         try:
             log_entry = ApiLog(
@@ -55,4 +58,4 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         finally:
             db.close()
 
-        return response
+        return final_response
