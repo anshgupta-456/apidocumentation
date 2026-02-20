@@ -16,7 +16,7 @@ class ApiLog(Base):
     latency_ms = Column(Integer)
     api_version = Column(Text)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-class InfererredSchema(Base):
+class InferredSchema(Base):
     __tablename__ = "inferred_schemas"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     endpoint = Column(Text, nullable=False)
