@@ -16,3 +16,12 @@ class ApiLog(Base):
     latency_ms = Column(Integer)
     api_version = Column(Text)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+class InfererredSchema(Base):
+    __tablename__ = "inferred_schemas"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    endpoint = Column(Text, nullable=False)
+    method = Column(Text, nullable=False)
+    schema_json = Column(JSONB, nullable=False)
+    sample_size = Column(Integer, nullable=False)
+    schema_hash = Column(Text, nullable=False)
+    computed_At = Column(TIMESTAMP(timezone=True), server_default=func.now())
