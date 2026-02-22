@@ -25,3 +25,12 @@ class InferredSchema(Base):
     sample_size = Column(Integer, nullable=False)
     schema_hash = Column(Text, nullable=False)
     computed_At = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    class OpenAPISpec(Base):
+        __tablename__ = "openapi_specs"
+
+        id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+        version_hash = Column(Text, nullable=False)
+        spec_json = Column(JSONB, nullable=False)
+        normalized_paths = Column(JSONB, nullable=False)
+        extracted_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
