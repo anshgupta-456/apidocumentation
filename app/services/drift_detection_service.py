@@ -6,46 +6,63 @@ from app.database.session import SessionLocal
 class SchemaDriftService:
 
     @staticmethod
-    def compare(openapi_schema: dict, runtime_schema: dict) -> dict:
+    
+    def compare(expected: dict, runtime: dict) -> dict:
         drift = {
-            "missing_in_runtime":[],
+            "missing_in_runtime": [],
             "missing_in_openapi": [],
             "type_mismatches": [],
             "nullable_mismatches": [],
             "required_mismatches": []
         }
-        openapi_fields = set(openapi_schema.keys())
-        runtime_fields = set(runtime_schema.keys())
 
-        #missing fields in runtime
-        for field in openapi_fields - runtime_fields:
-            drift["missing_in_runtime"].append(field)
-        #new undocumented fields in runtime
-        for field in runtime_fields - openapi_fields:
-            drift["missing_in_openapi"].append(field)
-        # compare shared fields
-        for field in openapi_fields & runtime_fields:
-            o = openapi_schema[field]
-            r = runtime_schema[field]
+        # --- Fix: Normalize runtime to include "required" ---
+        for field, r in runtime.items():
+            # runtime has no "required", so we compute it
+            r["required"] = r.get("presence_percent", 0) == 100.0
 
-            if o["type"] != r["types"][0]:
+        # --- Check fields expected but missing in runtime ---
+        for field in expected:
+            if field not in runtime:
+                drift["missing_in_runtime"].append(field)
+
+        # --- Check fields present in runtime but not in OpenAPI ---
+        for field in runtime:
+            if field not in expected:
+                drift["missing_in_openapi"].append(field)
+
+        # --- Compare each field ---
+        for field in expected:
+            if field not in runtime:
+                continue
+
+            o = expected[field]
+            r = runtime[field]
+
+            # type mismatch
+            if o["type"] not in r["types"]:
                 drift["type_mismatches"].append({
                     "field": field,
-                    "openapi": o["type"],
+                    "expected": o["type"],
                     "runtime": r["types"]
                 })
+
+            # nullable mismatch
             if o["nullable"] != r["nullable"]:
                 drift["nullable_mismatches"].append({
                     "field": field,
-                    "openapi": o["nullable"],
+                    "expected": o["nullable"],
                     "runtime": r["nullable"]
                 })
+
+            # required mismatch (fixed)
             if o["required"] != r["required"]:
                 drift["required_mismatches"].append({
                     "field": field,
-                    "openapi": True,
-                    "runtime_presence": r["presence_percent"]
+                    "expected": o["required"],
+                    "runtime": r["required"]
                 })
+
         return drift
     @staticmethod
     def save_drift(endpoint:str, drift_json: dict, severity="medium", ai_message=""):
