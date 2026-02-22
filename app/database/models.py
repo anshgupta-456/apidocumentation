@@ -1,3 +1,4 @@
+from datetime import datetime
 import uuid
 from sqlalchemy import Column, String, Integer, Text, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -34,3 +35,11 @@ class OpenAPISpec(Base):
     spec_json = Column(JSONB, nullable=False)
     normalized_paths = Column(JSONB, nullable=False)
     extracted_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+class DriftEvents(Base):
+    __tablename__ = "drift_events"
+    id= Column(UUID(as_uuid=True),primary_key=True, default=uuid.uuid4)
+    endpoint = Column(Text, nullable=False)
+    severity = Column(Text, nullable=False)
+    drift_detail = Column(JSONB, nullable=False)
+    ai_explanation = Column(Text, nullable=False)
+    detected_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
