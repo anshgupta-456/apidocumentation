@@ -7,10 +7,12 @@ from app.schemas.user_schema import UserCreate
 from app.schemas.user_schema import UserResponse
 from app.schemas.user_schema import UserCreate
 from app.routes.drift_routes import router as drift_router
+from app.routes.drift_view_routes import router as drift_view_router
 
 app = FastAPI(title=" API Contract Validator")
 app.include_router(openapi_router)
 app.include_router(drift_router)
+app.include_router(drift_view_router)
 # creating database tables on startup
 Base.metadata.create_all(bind=engine)
 
