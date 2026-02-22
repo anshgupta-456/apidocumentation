@@ -14,6 +14,25 @@ class OpenAPIExtractionService:
         """Hash the full OpenAPI spec for versioning."""
         return hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
 
+    # @staticmethod
+    # def normalize_schema(schema: dict) -> dict:
+    #     """Convert OpenAPI schema into comparable normalized format."""
+    #     normalized = {}
+
+    #     if "properties" not in schema:
+    #         return normalized
+
+    #     properties = schema["properties"]
+    #     required_fields = schema.get("required", [])
+
+    #     for field, info in properties.items():
+    #         normalized[field] = {
+    #             "type": info.get("type", "object"),
+    #             "nullable": info.get("nullable", False),
+    #             "required": field in required_fields
+    #         }
+
+    #     return normalized
     @staticmethod
     def normalize_schema(schema: dict) -> dict:
         """Convert OpenAPI schema into comparable normalized format."""
@@ -26,9 +45,28 @@ class OpenAPIExtractionService:
         required_fields = schema.get("required", [])
 
         for field, info in properties.items():
+
+            # NEW FIX: handle anyOf schemas (Optional fields)
+            if "anyOf" in info:
+                types = []
+                nullable = False
+
+                for item in info["anyOf"]:
+                    t = item.get("type")
+                    if t == "null":
+                        nullable = True
+                    elif t:
+                        types.append(t)
+
+                field_type = types[0] if types else "object"
+
+            else:
+                field_type = info.get("type", "object")
+                nullable = info.get("nullable", False)
+
             normalized[field] = {
-                "type": info.get("type", "object"),
-                "nullable": info.get("nullable", False),
+                "type": field_type,
+                "nullable": nullable,
                 "required": field in required_fields
             }
 
