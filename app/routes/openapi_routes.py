@@ -6,6 +6,6 @@ router = APIRouter()
 
 @router.get("/extract-openapi")
 def extract_openapi(request: Request):
-    app= request.app
+    app=request.app
     result = OpenAPIExtractionnService.run_extraction(app)
     return{"message": "OpenAPI extracted", "normalized": result}
