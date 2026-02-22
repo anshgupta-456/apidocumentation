@@ -88,7 +88,7 @@ def detect_drift(request: Request, endpoint: str):
     drift_report = SchemaDriftService.compare(expected_schema, runtime)
 
     # 6️⃣ Save drift event to DB
-    SchemaDriftService.save_drift(endpoint, drift_report)
+    SchemaDriftService.save_drift(endpoint, method, drift_report)
 
     return {
         "message": "Drift detection complete",

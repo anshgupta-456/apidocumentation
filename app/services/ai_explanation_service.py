@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class AIExplanationService:
-    client = Groq(api_key=os.getenv(GROQ_API_KEY))
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
     @staticmethod
     def explain_drift(endpoint, method, drift_report):
@@ -27,7 +27,7 @@ class AIExplanationService:
         """
 
         response = AIExplanationService.client.chat.completions.create(
-            model="mixtral-8x7b-32768",
+            model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "user",
