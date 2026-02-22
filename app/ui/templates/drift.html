@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h1 class="text-3xl font-bold mb-4">Dashboard</h1>
+
+<div class="grid grid-cols-3 gap-6">
+
+    <div class="bg-white shadow p-4 rounded">
+        <h2 class="text-xl font-semibold">Total Drift Events</h2>
+        <p class="text-4xl mt-4 text-red-600">{{ total_drifts }}</p>
+    </div>
+
+    <div class="bg-white shadow p-4 rounded">
+        <h2 class="text-xl font-semibold">OpenAPI Versions</h2>
+        <p class="text-4xl mt-4 text-blue-600">{{ total_specs }}</p>
+    </div>
+
+    <div class="bg-white shadow p-4 rounded">
+        <h2 class="text-xl font-semibold">Latest Spec Hash</h2>
+        {% if latest_spec %}
+            <p class="mt-2 text-sm">{{ latest_spec.version_hash }}</p>
+            <p class="text-gray-500">{{ latest_spec.extracted_at }}</p>
+        {% else %}
+            <p>No spec extracted yet.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+{% endblock %}

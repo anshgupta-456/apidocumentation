@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h1 class="text-3xl font-bold mb-6">Drift Events</h1>
+
+<table class="w-full bg-white rounded shadow">
+    <tr class="bg-gray-200 text-left">
+        <th class="p-3">ID</th>
+        <th class="p-3">Endpoint</th>
+        <th class="p-3">Severity</th>
+        <th class="p-3">Detected</th>
+        <th class="p-3">View</th>
+    </tr>
+
+    {% for e in events %}
+    <tr class="border-b">
+        <td class="p-3">{{ e.id }}</td>
+        <td class="p-3">{{ e.endpoint }}</td>
+
+        <td class="p-3">
+            {% if e.severity == "high" %}
+                <span class="text-red-600 font-bold">HIGH</span>
+            {% elif e.severity == "medium" %}
+                <span class="text-yellow-600 font-bold">MEDIUM</span>
+            {% else %}
+                <span class="text-green-600 font-bold">LOW</span>
+            {% endif %}
+        </td>
+
+        <td class="p-3">{{ e.detected_at }}</td>
+        <td class="p-3"><a href="/ui/drift/{{ e.id }}" class="text-blue-700 underline">Open</a></td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% endblock %}

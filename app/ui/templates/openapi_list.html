@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h2>OpenAPI Versions</h2>
+
+<ul class="list-group mt-4">
+    {% for spec in specs %}
+    <li class="list-group-item">
+        <b>Version Hash:</b> {{ spec.version_hash }} <br>
+        <b>Extracted At:</b> {{ spec.extracted_at }} <br>
+
+        <a href="/ui/openapi/{{ spec.id }}" class="btn btn-primary btn-sm mt-2">
+            View Details
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+
+{% endblock %}
