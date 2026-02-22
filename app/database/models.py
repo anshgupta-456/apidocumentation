@@ -39,7 +39,10 @@ class DriftEvents(Base):
     __tablename__ = "drift_events"
     id= Column(UUID(as_uuid=True),primary_key=True, default=uuid.uuid4)
     endpoint = Column(Text, nullable=False)
+    method = Column(Text, nullable=False)
     severity = Column(Text, nullable=False)
     drift_detail = Column(JSONB, nullable=False)
     ai_explanation = Column(Text, nullable=False)
+    openapi_patch = Column(Text, nullable=True)
+    backend_patch = Column(Text, nullable=True)
     detected_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)

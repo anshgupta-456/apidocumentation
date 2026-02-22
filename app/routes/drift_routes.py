@@ -1,45 +1,10 @@
-# from fastapi import APIRouter, Request
-# from app.services.schema_inference_service import SchemaInferenceService
-# from app.services.openapi_extraction_service import OpenAPIExtractionService
-# from app.services.drift_detection_service import SchemaDriftService
 
-# router = APIRouter()
-
-# @router.get("/detect-drift/{endpoint:path}")
-# def detect_drift(request: Request, endpoint: str):
-    
-
-#     app = request.app
-#     if not endpoint.startswith("/"):
-#         endpoint = "/" + endpoint
-#     method = "POST"
-#     # GEtting runtime schema
-#     runtime = SchemaInferenceService.run_inference(endpoint,method)
-
-#     #Getting openapi spec
-#     spec, normalized = OpenAPIExtractionService.extracted_paths(app)
-
-#     if endpoint not in normalized:
-#         return {"error": "Endpoint not documented in OpenAPI"}
-#     if method not in normalized:
-#         return {"error": "Method not documented"}
-#     expected_schema = normalized[endpoint][method]
-#     #comparing schemas
-#     drift = SchemaDriftService.compare(expected_schema,runtime)
-
-#     #save drift event to db
-#     SchemaDriftService.save_drift(endpoint, drift)
-
-#     return{
-#         "message":"Drift detection complete",
-#         "endpoint":endpoint,
-#         "drift_report": drift
-#     }
 from fastapi import APIRouter, Request
 from app.services.schema_inference_service import SchemaInferenceService
 from app.services.openapi_extraction_service import OpenAPIExtractionService
 from app.services.drift_detection_service import SchemaDriftService
-
+from app.database.session import SessionLocal
+from app.database.models import DriftEvents
 router = APIRouter()
 
 @router.get("/detect-drift/{endpoint:path}")
@@ -96,3 +61,18 @@ def detect_drift(request: Request, endpoint: str):
         "method": method,
         "drift_report": drift_report
     }
+@router.get("/drift-events")
+def drift_events():
+    db = SessionLocal()
+    events = db.query(DriftEvents).order_by(DriftEvents.detected_at.desc()).all()
+    db.close()
+    return events
+@router.get("/drift-events/{id}")
+def drift_event_detail(id:str):
+    db = SessionLocal()
+    event = db.query(DriftEvents).filter(DriftEvents.id == id).first()
+    db.close()
+
+    if not event:
+        return{"error": "Drift event not found"}
+    return event
