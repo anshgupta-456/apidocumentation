@@ -18,7 +18,7 @@ class OpenAPIExtractionnService:
         if "properties" not in schema:
             return normalized
         properties = schema.get("properties", {})
-        requires_fields = schema.get("required", [])
+        required_fields = schema.get("required", [])
 
         for field_name, field_info in properties.items():
             normalized[field_name] = {
