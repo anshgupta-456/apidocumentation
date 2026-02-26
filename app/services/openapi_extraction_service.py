@@ -144,4 +144,4 @@ class OpenAPIExtractionService:
         """Run OpenAPI extraction and save it."""
         spec, normalized_paths = OpenAPIExtractionService.extracted_paths(app)
         OpenAPIExtractionService.save_to_db(spec, normalized_paths)
-        return normalized_paths
+        return spec,normalized_paths

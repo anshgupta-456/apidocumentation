@@ -5,7 +5,7 @@ from fastapi import openapi
 
 class OpenAPIPatchService:
     OPENAPI_PATH: "openapi.json"
-    GENERATEDPATH: "openapi.generated.json"
+    GENERATED_PATH: "openapi.generated.json"
 
     @staticmethod
     def load_original_spec():
