@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database.models import DriftEvents
 from app.database.session import SessionLocal
 from app.services.ai_explanation_service import AIExplanationService
-
+from app.services.ai_patch_service import AIPatchService
 class SchemaDriftService:
 
     @staticmethod
@@ -83,7 +83,6 @@ class SchemaDriftService:
             method,
             drift_json
         )
-        from app.services.ai_patch_service import AIPatchService
         patches = AIPatchService.generate_patches(endpoint, method, drift_json)
         openapi_patch = patches.get("openapi_patch", "")
         backend_patch = patches.get("backend_patch", "")
@@ -94,9 +93,10 @@ class SchemaDriftService:
             severity=severity,
             drift_detail=drift_json,
             ai_explanation=ai_message,
-            detected_at=datetime.utcnow(),
             openapi_patch=openapi_patch,
-            backend_patch=backend_patch
+            backend_patch=backend_patch,
+            detected_at=datetime.utcnow()
+
             
         )
     
