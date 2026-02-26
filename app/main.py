@@ -1,6 +1,8 @@
 from fastapi import FastAPI
+# from app.services.drift_detection_service import SchemaDriftService
+# from app.services.ai_explanation_service import AIExplanationService
 from app.middleware.logging_middleware import LoggingMiddleware
-from app.database.session import engine
+from app.database.session import SessionLocal, engine
 from app.database.base import Base
 from app.routes.openapi_routes import router as openapi_router
 from app.schemas.user_schema import UserCreate
@@ -20,7 +22,8 @@ Base.metadata.create_all(bind=engine)
 
 # adding logging middleware
 app.add_middleware(LoggingMiddleware)
-
+users_db = []
+user_id_counter = 1
 
 # Sameple Business endpoints
 # @app.post("/api/users")
@@ -32,11 +35,14 @@ app.add_middleware(LoggingMiddleware)
 #     }
 @app.post("/api/users", response_model=UserResponse)
 def create_user(user: UserCreate):
+    global user_id_counter
     saved_user = {
-        "id": 1,
+        "id": user_id_counter,
         "name": user.name,
         "age": user.age
     }
+    users_db.append(saved_user)
+    user_id_counter += 1
     return saved_user
 
 # @app.get("/api/users/{user_id}")
@@ -48,8 +54,13 @@ def create_user(user: UserCreate):
 #     }
 @app.get("/api/users/{user_id}", response_model=UserResponse)
 def get_user(user_id: int):
-    return {
-        "id": user_id,
-        "name": "Random User",
-        "age": 22
-    }
+    # return {
+    #     "id": user_id,
+    #     "name": "Random User",
+    #     "age": 22
+    # }
+    for user in users_db:
+        if user ["id"] == user_id:
+            return user
+    return {"detail": "User not found"}
+
