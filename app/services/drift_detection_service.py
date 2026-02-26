@@ -84,8 +84,10 @@ class SchemaDriftService:
             drift_json
         )
         patches = AIPatchService.generate_patches(endpoint, method, drift_json)
+        AIPatchService.save_patch(endpoint, method, patches)
         openapi_patch = patches.get("openapi_patch", "")
         backend_patch = patches.get("backend_patch", "")
+
         # --- Insert into DB ---
         entry = DriftEvents(
             endpoint=endpoint,

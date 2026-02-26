@@ -10,13 +10,16 @@ from app.schemas.user_schema import UserResponse
 from app.schemas.user_schema import UserCreate
 from app.routes.drift_routes import router as drift_router
 from app.routes.drift_view_routes import router as drift_view_router
+from app.routes.patch_routes import router as patch_router
 from app.ui.ui_routes import router as ui_router
 
 app = FastAPI(title=" API Contract Validator")
+app.include_router(patch_router)
 app.include_router(openapi_router)
 app.include_router(drift_router)
 app.include_router(drift_view_router)
 app.include_router(ui_router)
+
 # creating database tables on startup
 Base.metadata.create_all(bind=engine)
 
@@ -25,14 +28,7 @@ app.add_middleware(LoggingMiddleware)
 users_db = []
 user_id_counter = 1
 
-# Sameple Business endpoints
-# @app.post("/api/users")
-# async def create_user(user:dict):
-#     return{
-#         "id":1,
-#         "name":user.get("name"),
-#         "age":user.get("age")
-#     }
+
 @app.post("/api/users", response_model=UserResponse)
 def create_user(user: UserCreate):
     global user_id_counter
@@ -45,22 +41,15 @@ def create_user(user: UserCreate):
     user_id_counter += 1
     return saved_user
 
-# @app.get("/api/users/{user_id}")
-# async def get_user(user_id:int):
-#     return{
-#         "id": user_id,
-#         "name": "Ansh",
-#         "age": 21
-#     }
 @app.get("/api/users/{user_id}", response_model=UserResponse)
 def get_user(user_id: int):
-    # return {
-    #     "id": user_id,
-    #     "name": "Random User",
-    #     "age": 22
-    # }
     for user in users_db:
         if user ["id"] == user_id:
             return user
     return {"detail": "User not found"}
 
+
+
+print("\n📌 Loaded Routes:")
+for route in app.routes:
+    print(f"➡ {route.path} | {route.methods}")
