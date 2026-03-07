@@ -1,4 +1,4 @@
-API Contract Validator — Automatic Schema Drift Detection & Documentation Update
+API Contract Validator — Automatic Schema Drift Detection & Documentation Update.
 
 A FastAPI-based system that monitors real API behavior, detects schema drift, generates AI explanations, and produces actionable OpenAPI & backend patches automatically.
 
