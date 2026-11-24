@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Traffic logs{% endblock %}
+{% block crumbs %}<span class="current">Traffic logs</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Traffic logs</h1>
+    <p>Requests captured by the logging middleware for paths starting with <span class="mono">{{ settings.LOG_INCLUDE_PREFIXES|join(', ') }}</span>.</p>
+  </div>
+  <div class="actions">
+    <button class="btn" data-action="demo-traffic">Generate demo traffic</button>
+    <button class="btn btn-danger" data-action="clear-logs"
+      {% if filters.endpoint %}data-endpoint="{{ filters.endpoint }}"{% endif %}
+      {% if filters.method %}data-method="{{ filters.method }}"{% endif %}>
+      {{ 'Clear these logs' if filters.endpoint else 'Clear all logs' }}
+    </button>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/ui/logs" data-autosubmit>
+    <input class="input" type="search" name="endpoint" placeholder="Filter by path…" value="{{ filters.endpoint }}" data-search>
+    <select class="select" name="method" aria-label="Method">
+      <option value="">Any method</option>
+      {% for m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}<option value="{{ m }}" {{ 'selected' if filters.method == m }}>{{ m }}</option>{% endfor %}
+    </select>
+    <select class="select" name="status" aria-label="Status">
+      <option value="">Any status</option>
+      <option value="success" {{ 'selected' if filters.status == 'success' }}>Success (&lt; 400)</option>
+      <option value="error" {{ 'selected' if filters.status == 'error' }}>Errors (≥ 400)</option>
+    </select>
+    <button class="btn" type="submit">Apply</button>
+    {% if filters.values()|select|list %}<a class="btn btn-ghost" href="/ui/logs">Reset</a>{% endif %}
+  </form>
+
+  <div class="card-body flush">
+    {% if logs %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Request</th><th>Status</th><th class="num">Latency</th><th>Route</th><th>Time</th></tr></thead>
+      <tbody>
+      {% for log in logs %}
+        <tr>
+          <td colspan="5" style="padding:0">
+            <details class="row-details">
+              <summary style="display:grid;grid-template-columns:minmax(260px,2fr) 80px 90px minmax(160px,1.5fr) 150px;align-items:center;padding:10px 18px;gap:8px">
+                <span>{{ ui.method(log.method) }} <span class="path">{{ log.endpoint }}</span></span>
+                <span>{{ ui.http_status(log.status_code) }}</span>
+                <span class="num">{{ log.latency_ms }} ms</span>
+                <span class="path muted">{{ log.route_path or '—' }}</span>
+                <span class="nowrap muted small" title="{{ log.created_at|dt }}">{{ log.created_at|ago }}</span>
+              </summary>
+              <div style="padding:0 18px 12px">
+                <div class="log-bodies">
+                  <div><h4>Request body</h4>{{ ui.code("req-" ~ log.id, log.request_json|pretty if log.request_json is not none else "—", "json") }}</div>
+                  <div><h4>Response body</h4>{{ ui.code("res-" ~ log.id, log.response_json|pretty if log.response_json is not none else "—", "json") }}</div>
+                </div>
+                <div class="small muted">{{ log.user_agent or 'unknown client' }}{% if log.client_ip %} · {{ log.client_ip }}{% endif %} · {{ log.created_at|dt }}</div>
+              </div>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {{ ui.pagination(pager) }}
+    {% else %}
+      {% call ui.empty("No traffic captured", "Call your API (or generate demo traffic) and requests will appear here.") %}
+        <button class="btn btn-primary" data-action="demo-traffic">Generate demo traffic</button>
+      {% endcall %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

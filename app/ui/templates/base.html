@@ -1,19 +1,78 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Contract Validator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Dashboard{% endblock %} · API Contract Validator</title>
+  <script>
+    (function () {
+      var saved = localStorage.getItem("theme");
+      var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>AC</text></svg>">
+  <link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col">
-    {% include 'components/navbar.html' %}
-    <div class="p-6">
-    {% block content %}
-    {% endblock %}
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a href="/ui" class="brand" style="text-decoration:none">
+      <div class="brand-logo">AC</div>
+      <div>
+        <div class="brand-name">API Contract<br>Validator</div>
+      </div>
+    </a>
+    <nav class="nav">
+      <div class="nav-label">Monitor</div>
+      <a href="/ui" class="{{ 'active' if active == 'dashboard' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a href="/ui/endpoints" class="{{ 'active' if active == 'endpoints' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        Endpoints
+      </a>
+      <a href="/ui/drifts" class="{{ 'active' if active == 'drifts' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+        Drift events
+      </a>
+      <a href="/ui/logs" class="{{ 'active' if active == 'logs' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Traffic logs
+      </a>
+      <div class="nav-label">Contract</div>
+      <a href="/ui/openapi" class="{{ 'active' if active == 'openapi' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+        OpenAPI versions
+      </a>
+      <a href="/docs" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 16 4-4-4-4M6 8l-4 4 4 4m8.5-12-5 16"/></svg>
+        API reference
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="row"><span><span class="dot"></span>v{{ settings.VERSION }}</span>
+        <span title="Explanation engine">{{ 'AI · Groq' if ai_provider == 'groq' else 'Rule-based AI' }}</span></div>
     </div>
-</body>
+  </aside>
 
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs">{% block crumbs %}<span class="current">Dashboard</span>{% endblock %}</div>
+      <div class="topbar-actions">
+        <span class="small muted" style="margin-right:4px">Press <span class="kbd">/</span> to search</span>
+        <button class="btn btn-ghost icon-btn" data-action="toggle-theme" title="Toggle dark mode" aria-label="Toggle dark mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </div>
+    </header>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/js/app.js"></script>
+</body>
 </html>

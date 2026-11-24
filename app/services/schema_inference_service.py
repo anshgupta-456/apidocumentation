@@ -1,16 +1,16 @@
-
-
-import json
-from typing import Any, Dict, List
-from sqlalchemy.orm import Session
-from app.database.models import ApiLog,InferredSchema
-from app.database.session import SessionLocal
-from datetime import datetime
+"""Infers the *real* request/response schema of an endpoint from captured traffic."""
 import hashlib
+import json
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.database.models import ApiLog, InferredSchema
+from app.utils.schema_utils import join_path, match_template, parent_of
 
 
 class SchemaInferenceService:
-
     @staticmethod
     def infer_type(value: Any) -> str:
         """Infer the JSON data type of a value."""
@@ -31,95 +31,159 @@ class SchemaInferenceService:
         return "unknown"
 
     @staticmethod
-    def merge_field_stats(existing: Dict, new: Dict) -> Dict:
-        """Merge field statistics from multiple samples."""
-        existing["count"] += new["count"]
+    def _walk(value: Any, path: str, stats: Dict, containers: Dict) -> None:
+        """Recursively record statistics for every field below `path`."""
+        if isinstance(value, dict):
+            containers[path] = containers.get(path, 0) + 1
+            for key, child in value.items():
+                field = join_path(path, str(key))
+                entry = stats.setdefault(
+                    field, {"count": 0, "types": {}, "null_count": 0, "example": None, "item_types": set()}
+                )
+                entry["count"] += 1
+                child_type = SchemaInferenceService.infer_type(child)
+                entry["types"][child_type] = entry["types"].get(child_type, 0) + 1
+                if child is None:
+                    entry["null_count"] += 1
+                elif entry["example"] is None and not isinstance(child, (dict, list)):
+                    entry["example"] = child if not isinstance(child, str) else child[:80]
+                if isinstance(child, list):
+                    for item in child:
+                        if not isinstance(item, (dict, list)):
+                            entry["item_types"].add(SchemaInferenceService.infer_type(item))
+                SchemaInferenceService._walk(child, field, stats, containers)
+        elif isinstance(value, list):
+            item_path = f"{path}[]"
+            for item in value:
+                if isinstance(item, dict):
+                    SchemaInferenceService._walk(item, item_path, stats, containers)
 
-        # Merge type frequencies
-        for t, ct in new["types"].items():
-            existing["types"][t] = existing["types"].get(t, 0) + ct
+    @staticmethod
+    def build_schema_from_bodies(bodies: List[Any]) -> Dict:
+        """Aggregate many JSON bodies into a flattened runtime schema.
 
-        existing["null_count"] += new["null_count"]
-        return existing
+        `presence_percent` is relative to how often the *parent* object appeared, so a
+        nested field that is always present when its parent is present is "required".
+        """
+        stats: Dict = {}
+        containers: Dict = {}
+        for body in bodies:
+            if isinstance(body, (dict, list)):
+                SchemaInferenceService._walk(body, "", stats, containers)
+
+        schema: Dict = {}
+        for field, s in stats.items():
+            parent_total = containers.get(parent_of(field), 0) or s["count"]
+            presence = round(s["count"] / parent_total * 100, 2)
+            schema[field] = {
+                "types": sorted(t for t in s["types"] if t != "null"),
+                "presence_percent": presence,
+                "nullable": s["null_count"] > 0,
+                "required": presence >= 100.0,
+                "count": s["count"],
+                "example": s["example"],
+            }
+            item_types = sorted(t for t in s["item_types"] if t != "null")
+            if item_types:
+                schema[field]["item_types"] = item_types
+        return schema
 
     @staticmethod
     def build_schema(logs: List[ApiLog]) -> Dict:
-        """Build aggregated runtime schema for a set of logs."""
-        
-        field_stats = {}  # { field_name: {count, types, null_count} }
-        total_samples = len(logs)
-
-        for log in logs:
-            response = log.response_json
-            if not isinstance(response, dict):
-                continue  # ignore non-JSON responses
-
-            for field, value in response.items():
-
-                inferred_type = SchemaInferenceService.infer_type(value)
-
-                new_stats = {
-                    "count": 1,
-                    "types": {inferred_type: 1},
-                    "null_count": 1 if value is None else 0
-                }
-
-                if field not in field_stats:
-                    field_stats[field] = new_stats
-                else:
-                    field_stats[field] = SchemaInferenceService.merge_field_stats(field_stats[field], new_stats)
-
-        # Final normalized schema output
-        final_schema = {}
-
-        for field, stats in field_stats.items():
-            presence_pct = (stats["count"] / total_samples) * 100
-            null_pct = (stats["null_count"] / stats["count"]) * 100
-
-            final_schema[field] = {
-                "types": list(stats["types"].keys()),
-                "presence_percent": round(presence_pct, 2),
-                "nullable": null_pct > 0
-            }
-
-        return final_schema
+        """Backward compatible helper: runtime schema of the response bodies of `logs`."""
+        return SchemaInferenceService.build_schema_from_bodies([log.response_json for log in logs])
 
     @staticmethod
     def compute_hash(schema_json: Dict) -> str:
-        """Compute hash of the schema for versioning."""
-        encoded = json.dumps(schema_json, sort_keys=True).encode()
+        encoded = json.dumps(schema_json, sort_keys=True, default=str).encode()
         return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
-    def run_inference(endpoint: str, method: str) -> Dict:
-        """Main function to infer schema for an endpoint."""
-        
-        db: Session = SessionLocal()
+    def fetch_logs(db: Session, route: str, method: str, templates: Optional[list] = None) -> List[ApiLog]:
+        """Most recent logs for a route template (also matches legacy logs without route_path)."""
+        limit = settings.INFERENCE_SAMPLE_LIMIT
         logs = (
             db.query(ApiLog)
-            .filter(ApiLog.endpoint == endpoint, ApiLog.method == method)
+            .filter(ApiLog.method == method.upper(), ApiLog.route_path == route)
+            .order_by(ApiLog.created_at.desc())
+            .limit(limit)
             .all()
         )
+        if len(logs) < limit:
+            legacy = (
+                db.query(ApiLog)
+                .filter(ApiLog.method == method.upper(), ApiLog.route_path.is_(None))
+                .order_by(ApiLog.created_at.desc())
+                .limit(limit * 4)
+                .all()
+            )
+            candidates = templates or [route]
+            logs.extend(log for log in legacy if match_template(log.endpoint, candidates) == route)
+        return logs[:limit]
 
-        if not logs:
-            print("No logs found for this route.")
-            return {}
+    @staticmethod
+    def infer(db: Session, route: str, method: str, templates: Optional[list] = None, persist: bool = True) -> Dict:
+        """Infer request + response schemas for one endpoint."""
+        logs = SchemaInferenceService.fetch_logs(db, route, method, templates)
 
-        schema = SchemaInferenceService.build_schema(logs)
+        request_bodies = [log.request_json for log in logs if isinstance(log.request_json, (dict, list))]
+        # Only successful responses describe the documented contract (errors have their own shape).
+        response_bodies = [
+            log.response_json
+            for log in logs
+            if log.status_code is not None and 200 <= log.status_code < 300 and log.response_json is not None
+        ]
+
+        result = {
+            "total_logs": len(logs),
+            "request": SchemaInferenceService.build_schema_from_bodies(request_bodies),
+            "response": SchemaInferenceService.build_schema_from_bodies(response_bodies),
+            "request_samples": len(request_bodies),
+            "response_samples": len(response_bodies),
+        }
+
+        if persist:
+            for location in ("request", "response"):
+                samples = result[f"{location}_samples"]
+                if samples:
+                    SchemaInferenceService._persist(db, route, method, location, result[location], samples)
+        return result
+
+    @staticmethod
+    def _persist(db: Session, route: str, method: str, location: str, schema: Dict, samples: int) -> None:
         schema_hash = SchemaInferenceService.compute_hash(schema)
-
-        # Save to inferred_schemas table
-        record = InferredSchema(
-            endpoint=endpoint,
-            method=method,
-            schema_json=schema,
-            sample_size=len(logs),
-            schema_hash=schema_hash,
-            computed_At=datetime.now()
+        latest = (
+            db.query(InferredSchema)
+            .filter(
+                InferredSchema.endpoint == route,
+                InferredSchema.method == method,
+                InferredSchema.location == location,
+            )
+            .order_by(InferredSchema.computed_at.desc())
+            .first()
         )
-        db.add(record)
+        if latest and latest.schema_hash == schema_hash:
+            latest.sample_size = samples
+        else:
+            db.add(
+                InferredSchema(
+                    endpoint=route,
+                    method=method,
+                    location=location,
+                    schema_json=schema,
+                    sample_size=samples,
+                    schema_hash=schema_hash,
+                )
+            )
         db.commit()
 
-        db.close()
+    @staticmethod
+    def run_inference(endpoint: str, method: str) -> Dict:
+        """Legacy entry point: response schema for an endpoint (opens its own session)."""
+        from app.database.session import SessionLocal
 
-        return schema
+        db = SessionLocal()
+        try:
+            return SchemaInferenceService.infer(db, endpoint, method)["response"]
+        finally:
+            db.close()

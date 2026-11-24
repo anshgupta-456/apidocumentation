@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Drift events{% endblock %}
+{% block crumbs %}<span class="current">Drift events</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Drift events</h1>
+    <p>Every mismatch between the documented contract and real traffic, with explanation and fixes.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/drift-events/export?format=csv{{ '&' ~ export_query if export_query }}">Export CSV</a>
+    <a class="btn" href="/drift-events/export?format=json{{ '&' ~ export_query if export_query }}">Export JSON</a>
+    <button class="btn btn-primary" data-action="scan-all">Scan all endpoints</button>
+  </div>
+</div>
+
+<div class="card">
+  <form class="filters" method="get" action="/ui/drifts" data-autosubmit>
+    <div class="pills">
+      {% for link in status_links %}
+      <a href="{{ link.href }}" class="{{ 'active' if link.active }}">{{ link.label }}</a>
+      {% endfor %}
+    </div>
+    <input type="hidden" name="status" value="{{ filters.status }}">
+    <input class="input" type="search" name="endpoint" placeholder="Filter by endpoint…" value="{{ filters.endpoint }}" data-search>
+    <select class="select" name="severity" aria-label="Severity">
+      <option value="">Any severity</option>
+      {% for s in ['high', 'medium', 'low'] %}<option value="{{ s }}" {{ 'selected' if filters.severity == s }}>{{ s|capitalize }}</option>{% endfor %}
+    </select>
+    <select class="select" name="method" aria-label="Method">
+      <option value="">Any method</option>
+      {% for m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}<option value="{{ m }}" {{ 'selected' if filters.method == m }}>{{ m }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Apply</button>
+    {% if filters.values()|select|list %}<a class="btn btn-ghost" href="/ui/drifts">Reset</a>{% endif %}
+  </form>
+
+  <div class="card-body flush">
+    {% if events %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Severity</th><th>Endpoint</th><th class="num">Issues</th><th>Status</th><th class="num">Seen</th><th>Detected</th><th>Last seen</th><th>Engine</th></tr></thead>
+      <tbody>
+      {% for ev in events %}
+        <tr class="clickable" data-href="/ui/drift/{{ ev.id }}">
+          <td>{{ ui.severity(ev.severity) }}</td>
+          <td><a href="/ui/drift/{{ ev.id }}" style="color:inherit">{{ ui.method(ev.method) }} <span class="path">{{ ev.endpoint }}</span></a></td>
+          <td class="num">{{ ev.issue_count }}</td>
+          <td>{{ ui.status(ev.status) }}</td>
+          <td class="num">{{ ev.occurrences }}×</td>
+          <td class="nowrap muted" title="{{ ev.detected_at|dt }}">{{ ev.detected_at|ago }}</td>
+          <td class="nowrap muted" title="{{ ev.last_seen_at|dt }}">{{ ev.last_seen_at|ago }}</td>
+          <td class="small muted">{{ ev.ai_provider or 'legacy' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {{ ui.pagination(pager) }}
+    {% else %}
+      {% call ui.empty("No drift events", "Nothing matches these filters. Run a scan to check your endpoints.") %}
+        <button class="btn btn-primary" data-action="scan-all">Scan all endpoints</button>
+      {% endcall %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

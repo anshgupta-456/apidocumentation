@@ -1,30 +1,170 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Dashboard{% endblock %}
 {% block content %}
+{% set r = stats.requests %}{% set d = stats.drift %}{% set e = stats.endpoints %}
 
-<h1 class="text-3xl font-bold mb-4">Dashboard</h1>
-
-<div class="grid grid-cols-3 gap-6">
-
-    <div class="bg-white shadow p-4 rounded">
-        <h2 class="text-xl font-semibold">Total Drift Events</h2>
-        <p class="text-4xl mt-4 text-red-600">{{ total_drifts }}</p>
-    </div>
-
-    <div class="bg-white shadow p-4 rounded">
-        <h2 class="text-xl font-semibold">OpenAPI Versions</h2>
-        <p class="text-4xl mt-4 text-blue-600">{{ total_specs }}</p>
-    </div>
-
-    <div class="bg-white shadow p-4 rounded">
-        <h2 class="text-xl font-semibold">Latest Spec Hash</h2>
-        {% if latest_spec %}
-            <p class="mt-2 text-sm">{{ latest_spec.version_hash }}</p>
-            <p class="text-gray-500">{{ latest_spec.extracted_at }}</p>
-        {% else %}
-            <p>No spec extracted yet.</p>
-        {% endif %}
-    </div>
-
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Live contract health of your API — documented behaviour vs. what really happens.</p>
+  </div>
+  <div class="actions">
+    <button class="btn" data-action="demo-traffic" title="Send sample requests through the demo API">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Generate demo traffic
+    </button>
+    <button class="btn" data-action="extract-spec">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Snapshot OpenAPI
+    </button>
+    <button class="btn btn-primary" data-action="scan-all">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      Scan all endpoints
+    </button>
+  </div>
 </div>
 
+{% if r.total == 0 %}
+<div class="callout">
+  <div>
+    <h3>Get started in three steps</h3>
+    <ol class="steps">
+      <li><b>1</b> Send traffic to your <span class="mono">/api</span> endpoints (or generate demo traffic)</li>
+      <li><b>2</b> Scan endpoints for drift</li>
+      <li><b>3</b> Review explanations &amp; apply patches</li>
+    </ol>
+  </div>
+  <button class="btn btn-primary" data-action="demo-traffic">Generate demo traffic</button>
+</div>
+{% endif %}
+
+<div class="grid grid-kpi">
+  <div class="card kpi">
+    <div class="kpi-label">Requests captured</div>
+    <div class="kpi-value">{{ "{:,}".format(r.total) }}</div>
+    <div class="kpi-sub">{{ "{:,}".format(r.last_24h) }} in the last 24h</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Error rate</div>
+    <div class="kpi-value {{ 'danger' if r.error_rate >= 20 else ('warn' if r.error_rate >= 5 else '') }}">{{ r.error_rate }}%</div>
+    <div class="kpi-sub">{{ r.errors }} responses ≥ 400</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Avg latency</div>
+    <div class="kpi-value">{{ r.avg_latency_ms if r.avg_latency_ms is not none else '—' }}<span class="small muted">{{ ' ms' if r.avg_latency_ms is not none }}</span></div>
+    <div class="kpi-sub">p95 {{ r.p95_latency_ms if r.p95_latency_ms is not none else '—' }} ms</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Open drift events</div>
+    <div class="kpi-value {{ 'danger' if d.open_by_severity.high else ('warn' if d.open else 'ok') }}">{{ d.open }}</div>
+    <div class="kpi-sub">{{ d.open_by_severity.high }} high · {{ d.open_by_severity.medium }} medium · {{ d.open_by_severity.low }} low</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Endpoint coverage</div>
+    <div class="kpi-value">{{ e.coverage_percent }}%</div>
+    <div class="kpi-sub">{{ e.covered }} of {{ e.documented }} documented endpoints seen{% if e.undocumented %} · <span class="status-warn">{{ e.undocumented }} undocumented</span>{% endif %}</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Spec versions</div>
+    <div class="kpi-value">{{ stats.specs.total }}</div>
+    <div class="kpi-sub mono">{% if stats.specs.latest %}{{ stats.specs.latest.short_hash }} · {{ stats.specs.latest.extracted_at|ago }}{% else %}none yet{% endif %}</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2>Traffic <span class="sub">last 7 days</span></h2>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Requests</span><span><i style="background:var(--high)"></i>Errors</span></div>
+    </div>
+    <div class="card-body">
+      <div class="bars">
+        {% for day in stats.traffic %}
+        {% set h = (day.requests / max_traffic * 100) if day.requests else 0 %}
+        <div class="bar-col" title="{{ day.date }}: {{ day.requests }} requests, {{ day.errors }} errors">
+          <div class="bar-value">{{ day.requests if day.requests else '' }}</div>
+          <div class="bar-stack">
+            <div class="bar" style="height: {{ '%.1f'|format(h) }}%;{% if not day.requests %} opacity:.25{% endif %}">
+              {% if day.requests %}<div class="err" style="height: {{ '%.1f'|format(day.errors / day.requests * 100) }}%"></div>{% endif %}
+            </div>
+          </div>
+          <div class="bar-label">{{ day.label }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Open drift by severity</h2><a class="small" href="/ui/drifts?status=active">View all →</a></div>
+    <div class="card-body">
+      {% set sev_total = [d.open, 1]|max %}
+      {% for s, color in [('high', 'var(--high)'), ('medium', 'var(--medium)'), ('low', 'var(--low)')] %}
+      <div class="hbar">
+        <div class="hbar-top"><a href="/ui/drifts?severity={{ s }}&status=active">{{ ui.severity(s) }}</a><b>{{ d.open_by_severity[s] }}</b></div>
+        <div class="hbar-track"><div class="hbar-fill" style="width: {{ '%.1f'|format(d.open_by_severity[s] / sev_total * 100) }}%; background: {{ color }}"></div></div>
+      </div>
+      {% endfor %}
+      <div class="stat-list">
+        {% for st in ['open', 'acknowledged', 'resolved', 'ignored'] %}
+        <div><b>{{ d.by_status.get(st, 0) }}</b><span>{{ st }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2>Recent drift events</h2><a class="small" href="/ui/drifts">All events →</a></div>
+    <div class="card-body flush">
+      {% if stats.recent_events %}
+      <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Severity</th><th>Endpoint</th><th class="num">Issues</th><th>Status</th><th>Detected</th></tr></thead>
+        <tbody>
+        {% for ev in stats.recent_events %}
+          <tr class="clickable" data-href="/ui/drift/{{ ev.id }}">
+            <td>{{ ui.severity(ev.severity) }}</td>
+            <td>{{ ui.method(ev.method) }} <span class="path">{{ ev.endpoint }}</span></td>
+            <td class="num">{{ ev.issue_count }}</td>
+            <td>{{ ui.status(ev.status) }}</td>
+            <td class="nowrap muted">{{ ev.detected_at|ago }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+        {{ ui.empty("No drift detected yet", "Run a scan once your API has received some traffic.") }}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Busiest endpoints</h2><a class="small" href="/ui/endpoints">All endpoints →</a></div>
+    <div class="card-body flush">
+      {% if stats.top_endpoints %}
+      <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Endpoint</th><th class="num">Requests</th><th class="num">Errors</th><th class="num">Latency</th></tr></thead>
+        <tbody>
+        {% for ep in stats.top_endpoints %}
+          <tr class="clickable" data-href="/ui/logs?endpoint={{ ep.endpoint|urlencode }}&method={{ ep.method }}">
+            <td>{{ ui.method(ep.method) }} <span class="path">{{ ep.endpoint }}</span></td>
+            <td class="num">{{ ep.requests }}</td>
+            <td class="num {{ 'status-err' if ep.error_rate >= 20 }}">{{ ep.error_rate }}%</td>
+            <td class="num">{{ ep.avg_latency_ms }} ms</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+        {{ ui.empty("No traffic yet", "Requests to monitored endpoints show up here.") }}
+      {% endif %}
+    </div>
+  </div>
+</div>
 {% endblock %}

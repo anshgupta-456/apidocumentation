@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Spec {{ spec.short_hash }}{% endblock %}
+{% block crumbs %}<a href="/ui/openapi">OpenAPI versions</a><span>/</span><span class="current mono">{{ spec.short_hash }}</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="title-row"><h1>{{ spec.short_hash }}</h1></div>
+    <div class="meta">
+      <span>Captured <b>{{ spec.extracted_at|dt }}</b></span>
+      <span>Operations <b>{{ spec.endpoint_count }}</b></span>
+      <span class="mono small">{{ spec.version_hash }}</span>
+    </div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/ui/openapi/diff?base={{ spec.id }}&target=live">Diff vs live</a>
+    <a class="btn btn-primary" href="/openapi-specs/{{ spec.id }}/download">Download JSON</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Operations</h2><span class="small muted">Click an operation to see its request &amp; response schema</span></div>
+  <div class="card-body flush">
+    <table class="table">
+      <tbody>
+      {% for op in operations %}
+        <tr>
+          <td>
+            <details class="row-details">
+              <summary>
+                {{ ui.method(op.method) }} <span class="path cell-main">{{ op.endpoint }}</span>
+                {% if op.summary %}<span class="muted small" style="margin-left:8px">{{ op.summary }}</span>{% endif %}
+                <span class="muted small" style="float:right">
+                  {{ op.request|length }} request field(s) · {{ op.response|length }} response field(s){% if op.response_status %} · {{ op.response_status }}{% endif %}
+                </span>
+              </summary>
+              <div class="grid grid-2-eq" style="margin-top:12px">
+                <div>
+                  <h4 class="small muted" style="margin:0 0 6px">REQUEST BODY{% if not op.request_documented %} · none{% endif %}</h4>
+                  <div class="card">{{ ui.schema_table(op.request) }}</div>
+                </div>
+                <div>
+                  <h4 class="small muted" style="margin:0 0 6px">RESPONSE {{ op.response_status or '' }}{% if not op.response_documented %} · undocumented shape{% endif %}</h4>
+                  <div class="card">{{ ui.schema_table(op.response) }}</div>
+                </div>
+              </div>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

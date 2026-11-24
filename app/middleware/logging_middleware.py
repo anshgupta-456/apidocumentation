@@ -1,61 +1,100 @@
-import time
+"""Pure ASGI middleware that records API traffic for schema inference.
+
+Unlike a BaseHTTPMiddleware it never buffers or rebuilds the response: chunks are
+streamed straight through while a copy (up to LOG_MAX_BODY_BYTES) is kept for logging.
+Persisting the log runs in a worker thread and can never break the actual request.
+"""
 import json
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
-from app.database.session import SessionLocal
+import logging
+import time
+
+from starlette.concurrency import run_in_threadpool
+
+from app.config import settings
 from app.database.models import ApiLog
+from app.database.session import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+def should_log(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in settings.LOG_INCLUDE_PREFIXES)
 
-        start_time = time.time()
 
-        # Read request body
+def _parse_json(raw: bytes):
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+class LoggingMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not should_log(scope.get("path", "")):
+            await self.app(scope, receive, send)
+            return
+
+        limit = settings.LOG_MAX_BODY_BYTES
+        start = time.perf_counter()
+        request_body = bytearray()
+        response_body = bytearray()
+        state = {"status": 500, "is_json": False, "overflow": False}
+
+        async def receive_wrapper():
+            message = await receive()
+            if message["type"] == "http.request":
+                chunk = message.get("body", b"")
+                if len(request_body) + len(chunk) <= limit:
+                    request_body.extend(chunk)
+            return message
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                state["status"] = message["status"]
+                for key, value in message.get("headers", []):
+                    if key.lower() == b"content-type":
+                        state["is_json"] = b"json" in value.lower()
+            elif message["type"] == "http.response.body" and state["is_json"]:
+                chunk = message.get("body", b"")
+                if len(response_body) + len(chunk) <= limit:
+                    response_body.extend(chunk)
+                else:
+                    state["overflow"] = True
+            await send(message)
+
         try:
-            request_body = await request.json()
-        except:
-            request_body = None
+            await self.app(scope, receive_wrapper, send_wrapper)
+        finally:
+            route = scope.get("route")
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+            client = scope.get("client")
+            entry = {
+                "endpoint": scope.get("path", ""),
+                "route_path": getattr(route, "path", None),
+                "method": scope.get("method", "GET").upper(),
+                "request_json": _parse_json(bytes(request_body)),
+                "response_json": None if state["overflow"] else _parse_json(bytes(response_body)),
+                "status_code": state["status"],
+                "latency_ms": int((time.perf_counter() - start) * 1000),
+                "api_version": headers.get("x-api-version", "v1"),
+                "client_ip": client[0] if client else None,
+                "user_agent": headers.get("user-agent"),
+            }
+            await run_in_threadpool(self._save, entry)
 
-        # --- Capture response correctly ---
-        response = await call_next(request)
-
-        # IMPORTANT: Read the body safely
-        resp_body = b""
-        async for chunk in response.body_iterator:
-            resp_body += chunk
-
-        # Reconstruct response
-        final_response = Response(
-            content=resp_body,
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            media_type=response.media_type
-        )
-
-        try:
-            parsed_response = json.loads(resp_body)
-        except:
-            parsed_response = None
-
-        latency = int((time.time() - start_time) * 1000)
-
-        # --- Save to DB ---
+    @staticmethod
+    def _save(entry: dict) -> None:
         db = SessionLocal()
         try:
-            log_entry = ApiLog(
-                endpoint=request.url.path,
-                method=request.method,
-                request_json=request_body,
-                response_json=parsed_response,
-                status_code=response.status_code,
-                latency_ms=latency,
-                api_version="v1"
-            )
-            db.add(log_entry)
+            db.add(ApiLog(**entry))
             db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Failed to persist API log for %s %s", entry["method"], entry["endpoint"])
         finally:
             db.close()
-
-        return final_response

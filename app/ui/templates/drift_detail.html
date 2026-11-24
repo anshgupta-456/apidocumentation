@@ -1,36 +1,170 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% set ev = event %}{% set detail = ev.drift_detail %}
+{% block title %}{{ ev.method }} {{ ev.endpoint }}{% endblock %}
+{% block crumbs %}<a href="/ui/drifts">Drift events</a><span>/</span><span class="current">{{ ev.method }} {{ ev.endpoint }}</span>{% endblock %}
 {% block content %}
 
-<h1 class="text-3xl font-bold mb-6">Drift Events</h1>
+<div class="page-head">
+  <div style="min-width:0">
+    <div class="title-row">
+      {{ ui.method(ev.method) }}
+      <h1>{{ ev.endpoint }}</h1>
+      {{ ui.severity(ev.severity) }}
+      {{ ui.status(ev.status) }}
+    </div>
+    <div class="meta">
+      <span>Detected <b title="{{ ev.detected_at|dt }}">{{ ev.detected_at|ago }}</b></span>
+      <span>Last seen <b title="{{ ev.last_seen_at|dt }}">{{ ev.last_seen_at|ago }}</b></span>
+      <span>Seen <b>{{ ev.occurrences }}×</b></span>
+      <span>Issues <b>{{ detail.issues|length }}</b></span>
+      {% if detail.sample_size %}<span>Samples <b>{{ detail.sample_size.response or 0 }}</b> responses · <b>{{ detail.sample_size.request or 0 }}</b> requests</span>{% endif %}
+      {% if ev.resolved_at %}<span>Closed <b>{{ ev.resolved_at|ago }}</b></span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    {% if ev.status in ['open', 'acknowledged'] %}
+      {% if ev.status == 'open' %}<button class="btn" data-action="set-status" data-id="{{ ev.id }}" data-status="acknowledged">Acknowledge</button>{% endif %}
+      <button class="btn btn-primary" data-action="set-status" data-id="{{ ev.id }}" data-status="resolved">Mark resolved</button>
+      <button class="btn btn-ghost" data-action="set-status" data-id="{{ ev.id }}" data-status="ignored">Ignore</button>
+    {% else %}
+      <button class="btn" data-action="set-status" data-id="{{ ev.id }}" data-status="open">Reopen</button>
+    {% endif %}
+    <button class="btn" data-action="scan-endpoint" data-endpoint="{{ ev.endpoint }}" data-method="{{ ev.method }}" data-open="false" title="Re-run drift detection with current traffic">Re-scan</button>
+    <button class="btn btn-ghost btn-danger icon-btn" data-action="delete-event" data-id="{{ ev.id }}" title="Delete event" aria-label="Delete event">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></svg>
+    </button>
+  </div>
+</div>
 
-<table class="w-full bg-white rounded shadow">
-    <tr class="bg-gray-200 text-left">
-        <th class="p-3">ID</th>
-        <th class="p-3">Endpoint</th>
-        <th class="p-3">Severity</th>
-        <th class="p-3">Detected</th>
-        <th class="p-3">View</th>
-    </tr>
+<!-- Explanation -->
+<div class="card">
+  <div class="card-head">
+    <h2>Analysis</h2>
+    <span class="badge plain tag-info">{{ 'AI · ' ~ ev.ai_provider if ev.ai_provider == 'groq' else ('Rule-based engine' if ev.ai_provider else 'Legacy AI output') }}</span>
+  </div>
+  <div class="card-body">
+    {% if explanation %}
+      <p class="explain-summary">{{ explanation.summary or explanation.Summary }}</p>
+      <div class="explain-grid">
+        <div class="explain-block"><h4>Likely cause</h4><p>{{ explanation.cause }}</p></div>
+        <div class="explain-block"><h4>Impact on consumers</h4><p>{{ explanation.impact }}</p></div>
+        <div class="fix-card explain-block">
+          <h4>Documentation fixes</h4>
+          {% set doc_fix = explanation.doc_fix %}
+          {% if doc_fix is string %}<p>{{ doc_fix }}</p>{% else %}<ul>{% for f in doc_fix or [] %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        <div class="fix-card explain-block">
+          <h4>Backend fixes</h4>
+          {% set code_fix = explanation.code_fix %}
+          {% if code_fix is string %}<p>{{ code_fix }}</p>{% else %}<ul>{% for f in code_fix or [] %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+      </div>
+    {% elif raw_explanation %}
+      {{ ui.code("raw-explanation", raw_explanation, "text") }}
+    {% else %}
+      <p class="muted">No explanation stored for this event.</p>
+    {% endif %}
+  </div>
+</div>
 
-    {% for e in events %}
-    <tr class="border-b">
-        <td class="p-3">{{ e.id }}</td>
-        <td class="p-3">{{ e.endpoint }}</td>
-
-        <td class="p-3">
-            {% if e.severity == "high" %}
-                <span class="text-red-600 font-bold">HIGH</span>
-            {% elif e.severity == "medium" %}
-                <span class="text-yellow-600 font-bold">MEDIUM</span>
-            {% else %}
-                <span class="text-green-600 font-bold">LOW</span>
+<!-- Issues -->
+<div class="card">
+  <div class="card-head"><h2>Issues <span class="sub">{{ detail.issues|length }} found</span></h2></div>
+  <div class="card-body flush">
+    {% if detail.issues %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Severity</th><th>Where</th><th>Type</th><th>Field</th><th>Details</th></tr></thead>
+      <tbody>
+      {% for issue in detail.issues %}
+        <tr>
+          <td>{{ ui.severity(issue.severity) }}</td>
+          <td><span class="badge plain">{{ issue.location }}</span></td>
+          <td class="nowrap small">{{ issue.category|replace('_', ' ')|capitalize }}</td>
+          <td class="path">{{ issue.field or '—' }}</td>
+          <td>{{ issue.message }}
+            {% if issue.expected is not none or issue.observed is not none %}
+            <div class="cell-sub mono">expected: {{ issue.expected if issue.expected is not none else '—' }} · observed: {{ issue.observed if issue.observed is not none else '—' }}</div>
             {% endif %}
-        </td>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+      {{ ui.empty("No issues", "This event has no recorded issues.") }}
+    {% endif %}
+  </div>
+</div>
 
-        <td class="p-3">{{ e.detected_at }}</td>
-        <td class="p-3"><a href="/ui/drift/{{ e.id }}" class="text-blue-700 underline">Open</a></td>
-    </tr>
-    {% endfor %}
-</table>
+<!-- Patches -->
+<div class="card" data-tabs>
+  <div class="card-head" style="border-bottom:none;padding-bottom:4px">
+    <h2>Suggested fixes</h2>
+    <div class="actions">
+      <a id="generated-link" class="btn btn-sm btn-ghost" href="/patch/generated-spec" hidden>Download generated spec</a>
+      <button class="btn btn-sm btn-primary" data-action="apply-patch" data-id="{{ ev.id }}" title="Merge the OpenAPI patch into the live spec and write openapi.generated.json">Apply OpenAPI patch</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="openapi">OpenAPI patch</button>
+    <button class="tab" data-tab="backend">Backend (Pydantic)</button>
+  </div>
+  <div class="card-body">
+    <div class="tab-panel active" data-panel="openapi">
+      {% if ev.openapi_patch %}
+        {% if ev.openapi_patch is mapping %}
+          {{ ui.code("openapi-patch", ev.openapi_patch|pretty, "json") }}
+        {% else %}
+          {{ ui.code("openapi-patch", ev.openapi_patch, "text") }}
+        {% endif %}
+        <p class="small muted" style="margin:10px 0 0">Applying writes <span class="mono">{{ settings.GENERATED_SPEC_PATH }}</span> — the running code and the live spec are never modified.</p>
+      {% else %}
+        <p class="muted">No OpenAPI patch for this event.</p>
+      {% endif %}
+    </div>
+    <div class="tab-panel" data-panel="backend">
+      {% if ev.backend_patch %}
+        {{ ui.code("backend-patch", ev.backend_patch, "python") }}
+      {% else %}
+        <p class="muted">No backend patch for this event.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
 
+<!-- Schemas -->
+{% if detail.runtime_schema %}
+<div class="card" data-tabs>
+  <div class="card-head" style="border-bottom:none;padding-bottom:4px"><h2>Documented vs. observed schema</h2></div>
+  <div class="tabs">
+    <button class="tab active" data-tab="response">Response</button>
+    <button class="tab" data-tab="request">Request</button>
+  </div>
+  {% for loc in ['response', 'request'] %}
+  <div class="tab-panel {{ 'active' if loop.first }}" data-panel="{{ loc }}">
+    <div class="grid grid-2-eq" style="padding:16px 18px">
+      <div>
+        <h4 class="small muted" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em">Documented (OpenAPI)</h4>
+        <div class="card">{{ ui.schema_table(detail.expected_schema.get(loc, {})) }}</div>
+      </div>
+      <div>
+        <h4 class="small muted" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em">Observed ({{ detail.sample_size.get(loc, 0) }} samples)</h4>
+        <div class="card">{{ ui.schema_table(detail.runtime_schema.get(loc, {}), runtime=True) }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Notes -->
+<div class="card">
+  <div class="card-head"><h2>Notes</h2><button class="btn btn-sm" data-action="save-notes" data-id="{{ ev.id }}">Save notes</button></div>
+  <div class="card-body">
+    <textarea id="notes" class="textarea" placeholder="Add context for your team: decisions, ticket links, owner…">{{ ev.notes or '' }}</textarea>
+  </div>
+</div>
 {% endblock %}

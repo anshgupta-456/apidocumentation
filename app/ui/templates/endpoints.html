@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Endpoints{% endblock %}
+{% block crumbs %}<span class="current">Endpoints</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Endpoints</h1>
+    <p>Documented routes vs. observed traffic. {{ documented }} documented · {{ covered }} with traffic{% if undocumented %} · <span class="status-warn">{{ undocumented }} undocumented</span>{% endif %}</p>
+  </div>
+  <div class="actions">
+    <div class="pills">
+      <a href="/ui/endpoints" class="{{ 'active' if not show_all }}">Monitored</a>
+      <a href="/ui/endpoints?all=true" class="{{ 'active' if show_all }}">All routes</a>
+    </div>
+    <button class="btn btn-primary" data-action="scan-all">Scan all endpoints</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body flush">
+    {% if endpoints %}
+    <div class="table-wrap">
+    <table class="table dense">
+      <thead>
+        <tr>
+          <th>Endpoint</th><th>Contract</th><th class="num">Requests</th><th class="num">Errors</th>
+          <th class="num">Avg latency</th><th>Last seen</th><th>Drift</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for ep in endpoints %}
+        <tr>
+          <td class="nowrap">
+            <div>{{ ui.method(ep.method) }} <span class="path cell-main">{{ ep.endpoint }}</span></div>
+            {% if ep.summary %}<div class="cell-sub" style="padding-left:62px">{{ ep.summary }}</div>{% endif %}
+          </td>
+          <td>{% if ep.documented %}<span class="badge sev-low">Documented</span>{% else %}<span class="badge sev-medium">Undocumented</span>{% endif %}</td>
+          <td class="num">{{ ep.requests }}</td>
+          <td class="num {{ 'status-err' if ep.error_rate >= 20 else ('status-warn' if ep.error_rate > 0) }}">{{ ep.error_rate }}%</td>
+          <td class="num">{{ (ep.avg_latency_ms ~ ' ms') if ep.avg_latency_ms is not none else '—' }}</td>
+          <td class="nowrap muted">{{ ep.last_seen|ago if ep.last_seen else 'never' }}</td>
+          <td class="nowrap">
+            {% if ep.open_drifts %}
+              <a href="/ui/drifts?endpoint={{ ep.endpoint|urlencode }}&method={{ ep.method }}&status=active">{{ ui.severity(ep.drift_severity) }} <span class="small">{{ ep.open_drifts }} open</span></a>
+            {% elif ep.requests %}<span class="badge plain tag-info">Clean</span>
+            {% else %}<span class="muted small">no data</span>{% endif %}
+          </td>
+          <td class="nowrap" style="text-align:right">
+            <button class="btn btn-sm" data-action="scan-endpoint" data-endpoint="{{ ep.endpoint }}" data-method="{{ ep.method }}" {{ 'disabled' if not ep.requests }}>Scan</button>
+            <a class="btn btn-sm btn-ghost" href="/ui/logs?endpoint={{ ep.endpoint|urlencode }}&method={{ ep.method }}">Logs</a>
+            {% if ep.requests %}<button class="btn btn-sm btn-ghost btn-danger" data-action="clear-logs" data-endpoint="{{ ep.endpoint }}" data-method="{{ ep.method }}" title="Delete captured traffic for this endpoint">Clear</button>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+      {{ ui.empty("No endpoints", "No routes match the monitored prefixes (" ~ settings.LOG_INCLUDE_PREFIXES|join(', ') ~ ").") }}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

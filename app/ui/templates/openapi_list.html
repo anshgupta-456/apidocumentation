@@ -1,19 +1,79 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}OpenAPI versions{% endblock %}
+{% block crumbs %}<span class="current">OpenAPI versions</span>{% endblock %}
 {% block content %}
+{% set live_saved = specs and specs[0].version_hash == live_hash %}
+<div class="page-head">
+  <div>
+    <h1>OpenAPI versions</h1>
+    <p>Every snapshot of your contract. Compare versions to catch breaking changes before they ship.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/openapi.json" target="_blank" rel="noopener">View live spec</a>
+    <button class="btn btn-primary" data-action="extract-spec">Snapshot live spec</button>
+  </div>
+</div>
 
-<h2>OpenAPI Versions</h2>
+{% if specs and not live_saved %}
+<div class="callout">
+  <div>
+    <h3>The live spec differs from the latest snapshot</h3>
+    <div class="muted">Your code changed since <span class="mono">{{ specs[0].short_hash }}</span> was captured.</div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/ui/openapi/diff?base={{ specs[0].id }}&target=live">See what changed</a>
+    <button class="btn btn-primary" data-action="extract-spec">Snapshot now</button>
+  </div>
+</div>
+{% endif %}
 
-<ul class="list-group mt-4">
-    {% for spec in specs %}
-    <li class="list-group-item">
-        <b>Version Hash:</b> {{ spec.version_hash }} <br>
-        <b>Extracted At:</b> {{ spec.extracted_at }} <br>
-
-        <a href="/ui/openapi/{{ spec.id }}" class="btn btn-primary btn-sm mt-2">
-            View Details
-        </a>
-    </li>
-    {% endfor %}
-</ul>
-
+<div class="card">
+  {% if specs|length > 1 %}
+  <form class="filters" method="get" action="/ui/openapi/diff">
+    <span class="small muted">Compare</span>
+    <select class="select" name="base" aria-label="Base version">
+      {% for s in specs %}<option value="{{ s.id }}" {{ 'selected' if loop.index == 2 }}>{{ s.short_hash }} · {{ s.extracted_at|dt }}</option>{% endfor %}
+    </select>
+    <span class="small muted">with</span>
+    <select class="select" name="target" aria-label="Target version">
+      <option value="live">Live spec</option>
+      {% for s in specs %}<option value="{{ s.id }}" {{ 'selected' if loop.first }}>{{ s.short_hash }} · {{ s.extracted_at|dt }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Compare</button>
+  </form>
+  {% endif %}
+  <div class="card-body flush">
+    {% if specs %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Version</th><th>Captured</th><th class="num">Operations</th><th></th></tr></thead>
+      <tbody>
+      {% for s in specs %}
+        <tr class="clickable" data-href="/ui/openapi/{{ s.id }}">
+          <td>
+            <span class="mono cell-main">{{ s.short_hash }}</span>
+            {% if loop.first %}<span class="badge plain tag-info" style="margin-left:6px">Latest</span>{% endif %}
+            {% if s.version_hash == live_hash %}<span class="badge sev-low" style="margin-left:4px">Matches live</span>{% endif %}
+          </td>
+          <td class="nowrap"><span title="{{ s.extracted_at|dt }}">{{ s.extracted_at|ago }}</span> <span class="muted small">· {{ s.extracted_at|dt }}</span></td>
+          <td class="num">{{ s.endpoint_count }}</td>
+          <td class="nowrap" style="text-align:right">
+            <a class="btn btn-sm btn-ghost" href="/ui/openapi/{{ s.id }}">View</a>
+            {% if not loop.last %}<a class="btn btn-sm btn-ghost" href="/ui/openapi/diff?base={{ specs[loop.index].id }}&target={{ s.id }}">Diff vs previous</a>{% endif %}
+            <a class="btn btn-sm btn-ghost" href="/ui/openapi/diff?base={{ s.id }}&target=live">Diff vs live</a>
+            <a class="btn btn-sm" href="/openapi-specs/{{ s.id }}/download">Download</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+      {% call ui.empty("No versions yet", "Take a snapshot of the live OpenAPI spec to start tracking contract changes.") %}
+        <button class="btn btn-primary" data-action="extract-spec">Snapshot live spec</button>
+      {% endcall %}
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

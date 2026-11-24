@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Not found{% endblock %}
+{% block crumbs %}<span class="current">Not found</span>{% endblock %}
+{% block content %}
+<div class="card">
+  {% call ui.empty("Not found", message) %}
+    <a class="btn btn-primary" href="/ui">Back to dashboard</a>
+  {% endcall %}
+</div>
+{% endblock %}

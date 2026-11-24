@@ -1,0 +1,70 @@
+{% macro method(m) -%}
+<span class="method m-{{ m|upper }}">{{ m|upper }}</span>
+{%- endmacro %}
+
+{% macro severity(s) -%}
+{% if s %}<span class="badge sev-{{ s }}">{{ s|capitalize }}</span>{% else %}<span class="badge plain muted">—</span>{% endif %}
+{%- endmacro %}
+
+{% macro status(s) -%}
+<span class="badge st-{{ s or 'open' }}">{{ (s or 'open')|capitalize }}</span>
+{%- endmacro %}
+
+{% macro http_status(code) -%}
+{% if code is none %}<span class="muted">—</span>
+{% elif code < 300 %}<span class="status-ok">{{ code }}</span>
+{% elif code < 500 %}<span class="status-warn">{{ code }}</span>
+{% else %}<span class="status-err">{{ code }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro code(id, content, lang="json") -%}
+<div class="code-wrap">
+  <button class="btn btn-sm copy-btn" data-action="copy" data-target="{{ id }}">Copy</button>
+  <pre class="code" id="{{ id }}" data-lang="{{ lang }}">{{ content }}</pre>
+</div>
+{%- endmacro %}
+
+{% macro empty(title, text, icon="inbox") -%}
+<div class="empty">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+  <h3>{{ title }}</h3>
+  <div>{{ text }}</div>
+  {% if caller is defined %}<div class="actions">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro pagination(p) -%}
+{% if p.total %}
+<div class="pagination">
+  <span>Showing {{ p.start }}–{{ p.end }} of {{ p.total }}</span>
+  <div class="actions">
+    {% if p.prev %}<a class="btn btn-sm" href="{{ p.prev }}">← Previous</a>{% endif %}
+    <span>Page {{ p.page }} / {{ p.pages }}</span>
+    {% if p.next %}<a class="btn btn-sm" href="{{ p.next }}">Next →</a>{% endif %}
+  </div>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro schema_table(fields, runtime=False) -%}
+{% if fields %}
+<div class="table-wrap">
+<table class="table compact">
+  <thead><tr><th>Field</th><th>Type</th><th>Nullable</th><th>{{ 'Presence' if runtime else 'Required' }}</th>{% if runtime %}<th>Example</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for name, f in fields|dictsort %}
+    <tr>
+      <td class="path">{{ name }}</td>
+      <td class="mono small">{% if runtime %}{{ f.types|join(' | ') or 'null' }}{% else %}{{ f.alt_types|join(' | ') if f.alt_types else f.type }}{% if f.format %} <span class="muted">({{ f.format }})</span>{% endif %}{% endif %}</td>
+      <td>{{ 'yes' if f.nullable else '—' }}</td>
+      <td>{% if runtime %}{{ f.presence_percent }}%{% else %}{{ 'required' if f.required else 'optional' }}{% endif %}</td>
+      {% if runtime %}<td class="mono small muted">{{ f.example if f.example is not none else '' }}</td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty" style="padding:20px">No fields</div>
+{% endif %}
+{%- endmacro %}

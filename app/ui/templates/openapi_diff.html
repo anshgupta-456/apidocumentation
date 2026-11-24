@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Spec diff{% endblock %}
+{% block crumbs %}<a href="/ui/openapi">OpenAPI versions</a><span>/</span><span class="current">Diff</span>{% endblock %}
+{% block content %}
+{% set s = diff.summary %}
+<div class="page-head">
+  <div>
+    <h1>Contract diff</h1>
+    <p>
+      <span class="mono">{{ base.short_hash }}</span> ({{ base.extracted_at|ago }})
+      → {% if target %}<span class="mono">{{ target.short_hash }}</span> ({{ target.extracted_at|ago }}){% else %}<b>live spec</b>{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if not target %}<button class="btn btn-primary" data-action="extract-spec">Snapshot live spec</button>{% endif %}
+  </div>
+</div>
+
+<div class="grid grid-kpi">
+  <div class="card kpi"><div class="kpi-label">Added operations</div><div class="kpi-value ok">{{ s.added_endpoints }}</div></div>
+  <div class="card kpi"><div class="kpi-label">Removed operations</div><div class="kpi-value {{ 'danger' if s.removed_endpoints }}">{{ s.removed_endpoints }}</div></div>
+  <div class="card kpi"><div class="kpi-label">Changed operations</div><div class="kpi-value {{ 'warn' if s.changed_endpoints }}">{{ s.changed_endpoints }}</div></div>
+  <div class="card kpi"><div class="kpi-label">Breaking changes</div><div class="kpi-value {{ 'danger' if s.breaking_changes else 'ok' }}">{{ s.breaking_changes }}</div></div>
+</div>
+
+{% if s.identical %}
+<div class="card">{{ ui.empty("No differences", "Both versions describe exactly the same contract.") }}</div>
+{% else %}
+
+{% if diff.added_endpoints or diff.removed_endpoints %}
+<div class="grid grid-2-eq" style="margin-bottom:16px">
+  <div class="card">
+    <div class="card-head"><h2 class="change-added">+ Added operations</h2></div>
+    <div class="card-body flush">
+      <table class="table compact"><tbody>
+      {% for op in diff.added_endpoints %}<tr><td>{{ ui.method(op.method) }} <span class="path">{{ op.endpoint }}</span></td></tr>
+      {% else %}<tr><td class="muted">None</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2 class="change-removed">− Removed operations</h2></div>
+    <div class="card-body flush">
+      <table class="table compact"><tbody>
+      {% for op in diff.removed_endpoints %}<tr><td>{{ ui.method(op.method) }} <span class="path">{{ op.endpoint }}</span> <span class="badge sev-high">Breaking</span></td></tr>
+      {% else %}<tr><td class="muted">None</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% for op in diff.changed_endpoints %}
+<div class="card">
+  <div class="card-head"><h2>{{ ui.method(op.method) }} <span class="path">{{ op.endpoint }}</span></h2><span class="small muted">{{ op.changes|length }} change(s)</span></div>
+  <div class="card-body flush">
+    <table class="table compact">
+      <thead><tr><th>Where</th><th>Field</th><th>Change</th><th>Before</th><th>After</th><th></th></tr></thead>
+      <tbody>
+      {% for c in op.changes %}
+        <tr>
+          <td><span class="badge plain">{{ c.location }}</span></td>
+          <td class="path">{{ c.field }}</td>
+          <td class="{{ 'change-added' if c.change == 'added' else ('change-removed' if c.change == 'removed' else 'change-changed') }}">{{ c.change|replace('_', ' ') }}</td>
+          <td class="mono small">{{ c.old if c.old is not none else '—' }}</td>
+          <td class="mono small">{{ c.new if c.new is not none else '—' }}</td>
+          <td>{% if c.breaking %}<span class="badge sev-high">Breaking</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}
