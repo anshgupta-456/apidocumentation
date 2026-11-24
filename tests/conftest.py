@@ -5,9 +5,10 @@ from pathlib import Path
 
 import pytest
 
-# Isolated SQLite database + deterministic (rule-based) explanations for every test run.
+# Isolated database + deterministic (rule-based) explanations for every test run.
+# SQLite by default; set TEST_DATABASE_URL to run the same suite against PostgreSQL.
 _tmp = tempfile.mkdtemp(prefix="acv-tests-")
-os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmp) / 'test.db'}"
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{Path(_tmp) / 'test.db'}"
 os.environ["GROQ_API_KEY"] = ""
 os.environ["AI_ENABLED"] = "false"
 os.environ["GENERATED_SPEC_PATH"] = str(Path(_tmp) / "openapi.generated.json")

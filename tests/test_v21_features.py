@@ -21,7 +21,11 @@ def auth_on(monkeypatch):
 
 def test_postgres_url_is_normalized(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgres://u:p@host:5432/db")
-    assert _database_url() == "postgresql://u:p@host:5432/db"
+    assert _database_url() == "postgresql+psycopg2://u:p@host:5432/db"
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host/db?sslmode=require")
+    assert _database_url() == "postgresql+psycopg2://u:p@host/db?sslmode=require"
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@host/db")  # explicit driver is kept
+    assert _database_url() == "postgresql+psycopg://u:p@host/db"
     monkeypatch.setenv("DATABASE_URL", "")
     assert _database_url().startswith("sqlite")
 

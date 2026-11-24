@@ -33,9 +33,13 @@ def _env_list(name: str, default: str) -> tuple:
 
 def _database_url() -> str:
     url = (os.getenv("DATABASE_URL") or "").strip() or "sqlite:///./api_validator.db"
-    # Render / Heroku / Railway hand out "postgres://" URLs, which SQLAlchemy 2 rejects.
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://"):]
+    # Hosting providers hand out "postgres://" / "postgresql://" URLs without a driver.
+    # SQLAlchemy 2 rejects "postgres://", and SQLAlchemy 2.1 defaults "postgresql://" to the
+    # psycopg 3 driver - pin psycopg2, which is the driver in requirements.txt.
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            url = "postgresql+psycopg2://" + url[len(prefix):]
+            break
     return url
 
 
