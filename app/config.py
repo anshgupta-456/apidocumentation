@@ -43,6 +43,15 @@ def _database_url() -> str:
     return url
 
 
+def _keep_alive_url() -> str:
+    """Explicit KEEP_ALIVE_URL, else Render's automatic RENDER_EXTERNAL_URL, else PUBLIC_BASE_URL."""
+    for name in ("KEEP_ALIVE_URL", "RENDER_EXTERNAL_URL", "PUBLIC_BASE_URL"):
+        value = (os.getenv(name) or "").strip().rstrip("/")
+        if value:
+            return value
+    return ""
+
+
 class Settings:
     APP_NAME: str = "API Contract Validator"
     VERSION: str = "2.1.0"
@@ -88,9 +97,18 @@ class Settings:
     ALERT_MIN_SEVERITY: str = os.getenv("ALERT_MIN_SEVERITY", "high").strip().lower() or "high"
     PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 
+    # Keep-alive: ping our own public URL so free hosting tiers (Render: 15 min) never idle out.
+    # On Render, RENDER_EXTERNAL_URL is set automatically, so this works without configuration.
+    KEEP_ALIVE_URL: str = _keep_alive_url()
+    KEEP_ALIVE_INTERVAL_MINUTES: int = _env_int("KEEP_ALIVE_INTERVAL_MINUTES", 10)
+
     DEMO_ENABLED: bool = _env_bool("DEMO_ENABLED", True)
     GENERATED_SPEC_PATH: str = os.getenv("GENERATED_SPEC_PATH", "openapi.generated.json")
     CORS_ORIGINS: tuple = _env_list("CORS_ORIGINS", "")
+
+    @property
+    def keep_alive_enabled(self) -> bool:
+        return bool(self.KEEP_ALIVE_URL) and self.KEEP_ALIVE_INTERVAL_MINUTES > 0
 
     @property
     def auth_enabled(self) -> bool:

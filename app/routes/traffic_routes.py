@@ -1,7 +1,7 @@
 import uuid
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -16,6 +16,22 @@ from app.services.traffic_service import TrafficService
 public_router = APIRouter(tags=["System"])
 router = APIRouter(tags=["Traffic & system"])
 RangeKey = Literal["24h", "7d", "30d"]
+
+
+@public_router.get("/health/live")
+def liveness():
+    """Cheap liveness probe that never touches the database.
+
+    Used by the keep-alive pinger, external uptime monitors and the platform health check,
+    so frequent pings don't keep a serverless database (e.g. Neon) awake.
+    """
+    return {"status": "alive", "version": settings.VERSION}
+
+
+@public_router.head("/health/live", include_in_schema=False)
+def liveness_head():
+    """HEAD variant for uptime monitors that probe with HEAD requests."""
+    return Response(status_code=200)
 
 
 @public_router.get("/health")
@@ -55,6 +71,9 @@ def config_summary() -> dict:
         "alerts_configured": AlertService.enabled(),
         "alert_min_severity": settings.ALERT_MIN_SEVERITY,
         "public_base_url": settings.PUBLIC_BASE_URL or None,
+        "keep_alive_enabled": settings.keep_alive_enabled,
+        "keep_alive_url": settings.KEEP_ALIVE_URL or None,
+        "keep_alive_interval_minutes": settings.KEEP_ALIVE_INTERVAL_MINUTES,
         "demo_enabled": settings.DEMO_ENABLED,
         "cors_origins": list(settings.CORS_ORIGINS),
     }

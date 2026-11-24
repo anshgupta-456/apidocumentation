@@ -1,0 +1,25 @@
+# Backup keep-alive bot. The app already pings itself every 10 minutes; this workflow
+# also wakes the service from outside if it ever falls asleep (e.g. after a platform restart).
+#
+# Enable it by adding a repository variable (Settings > Secrets and variables > Actions >
+# Variables) named KEEP_ALIVE_URL, e.g. https://api-contract-validator.onrender.com
+# Without the variable every run is skipped. GitHub runs schedules best-effort (runs can be
+# late) and disables them after 60 days without repository activity.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    if: ${{ vars.KEEP_ALIVE_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the deployed app
+        env:
+          URL: ${{ vars.KEEP_ALIVE_URL }}
+        # A sleeping free instance can take ~1 minute to start, so allow retries and a long timeout.
+        run: curl --fail --silent --show-error --retry 4 --retry-delay 15 --retry-all-errors --max-time 120 "${URL%/}/health/live"

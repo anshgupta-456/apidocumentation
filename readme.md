@@ -32,11 +32,11 @@ OpenAPI patch plus matching Pydantic models.
 | **Explanations** | Groq LLaMA 3.1 when `GROQ_API_KEY` is set, deterministic rule-based engine otherwise — works fully offline |
 | **Patches** | Valid OpenAPI fragment derived from observed traffic + generated Pydantic models; one-click apply to `openapi.generated.json` |
 | **Spec versioning** | Snapshots stored only when the spec changes, version diff with **breaking-change** detection |
-| **Automation** | Scheduled drift scans, log retention, Slack/Discord/Teams webhook alerts for new drift |
+| **Automation** | Scheduled drift scans, log retention, Slack/Discord/Teams webhook alerts, built-in keep-alive so free hosting never sleeps |
 | **Security** | Optional login (signed HttpOnly cookie, rate-limited), `X-API-Key` for scripts, sensitive fields masked before logs are stored |
 | **Deploy anywhere** | Dockerfile, Render blueprint, Procfile, `postgres://` URLs handled, health check, GitHub Actions CI |
 | **Portable** | PostgreSQL (JSONB/UUID) in production, SQLite with zero setup locally; existing DBs are migrated automatically |
-| **Tested** | 36 pytest tests covering the engine, auth, alerts, retention, the API and every UI page |
+| **Tested** | 39 pytest tests (SQLite + PostgreSQL in CI) covering the engine, auth, alerts, retention, keep-alive, the API and every UI page |
 
 ---
 
@@ -126,6 +126,7 @@ routes) needs a session cookie or `X-API-Key: <ADMIN_API_KEY>`.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Database + explanation engine status (public) |
+| `GET` | `/health/live` | Liveness probe without database access (public; used by keep-alive and health checks) |
 | `GET` | `/stats?range=24h\|7d\|30d` | Dashboard numbers, time series, status codes, health score |
 | `GET` | `/endpoints?all=` | Coverage, traffic, error rate, latency, open drift per endpoint |
 | `GET` | `/endpoints/detail?path=&method=&range=` | One operation: traffic, latency, schema comparison, drift history |

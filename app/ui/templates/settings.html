@@ -22,6 +22,7 @@
         (c.auth_enabled, 'Dashboard login enabled', 'ADMIN_PASSWORD is set — management API and dashboard require sign-in.', 'Set ADMIN_PASSWORD before exposing the app on the internet.'),
         (c.database_backend == 'postgresql', 'PostgreSQL database', 'Data survives restarts and redeploys.', 'Using ' ~ c.database_backend ~ '. Set DATABASE_URL to a PostgreSQL URL when hosting — container disks are wiped on redeploy.'),
         (c.secret_key_configured, 'Stable session secret', 'SECRET_KEY is set.', 'Set SECRET_KEY to a long random string (sessions otherwise derive from the password).'),
+        (c.keep_alive_enabled, 'Keep-alive', 'Pings ' ~ (c.keep_alive_url or '') ~ ' every ' ~ c.keep_alive_interval_minutes ~ ' min so the free instance never sleeps.', 'Automatic on Render. On other hosts set KEEP_ALIVE_URL to your public URL to stop the app from sleeping.'),
         (c.log_retention_days > 0, 'Log retention', 'Captured traffic older than ' ~ c.log_retention_days ~ ' days is deleted automatically.', 'LOG_RETENTION_DAYS=0 keeps logs forever — your database will keep growing.'),
         (c.auto_scan_interval_minutes > 0, 'Scheduled drift scans', 'Every ' ~ c.auto_scan_interval_minutes ~ ' minutes.', 'Set AUTO_SCAN_INTERVAL_MINUTES (e.g. 60) to detect drift without clicking “Scan”.'),
         (c.alerts_configured, 'Alerts', 'New ' ~ c.alert_min_severity ~ '-severity drift is posted to your webhook.', 'Set ALERT_WEBHOOK_URL (Slack, Discord, Teams…) to be notified about new drift.'),
@@ -40,6 +41,8 @@
     <div class="card">
       <div class="card-head"><h2>Background jobs</h2></div>
       <div class="kv">
+        <div>Keep-alive</div><div>{% if jobs.keep_alive_enabled %}every {{ jobs.keep_alive_interval_minutes }} min · <span class="mono small">{{ jobs.keep_alive_url }}</span>{% else %}<span class="muted">off (no public URL known)</span>{% endif %}</div>
+        {% if jobs.keep_alive_enabled %}<div>Last ping</div><div>{% if jobs.last_ping_result %}{{ jobs.last_ping_at|ago }} · {% if jobs.last_ping_result.ok %}<span class="status-ok">{{ jobs.last_ping_result.status_code }} OK</span>{% else %}<span class="status-err">failed</span> <span class="small muted">{{ jobs.last_ping_result.error or jobs.last_ping_result.status_code }}</span>{% endif %}{% else %}<span class="muted">first ping {{ jobs.keep_alive_interval_minutes }} min after startup</span>{% endif %}</div>{% endif %}
         <div>Auto-scan</div><div>{{ ('every ' ~ jobs.auto_scan_interval_minutes ~ ' min') if jobs.auto_scan_interval_minutes else 'off' }}</div>
         <div>Last scan</div><div>{% if jobs.last_scan_result %}{{ jobs.last_scan_at|ago }} · {{ jobs.last_scan_result.scanned }} scanned, {{ jobs.last_scan_result.with_drift }} with drift{% else %}<span class="muted">not run yet</span>{% endif %}</div>
         {% if jobs.next_scan_at %}<div>Next scan</div><div>{{ jobs.next_scan_at|ago }}</div>{% endif %}

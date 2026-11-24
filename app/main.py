@@ -28,6 +28,7 @@ from app.ui.ui_routes import router as ui_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("api_contract_validator")
+logging.getLogger("httpx").setLevel(logging.WARNING)  # keep-alive / alert requests would flood the logs
 
 
 @asynccontextmanager

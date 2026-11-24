@@ -223,3 +223,59 @@ def test_new_ui_pages_render(client):
         resp = client.get(url)
         assert resp.status_code == 200, url
     assert client.get("/ui/endpoint?method=GET&path=/missing").status_code == 404
+
+
+def test_liveness_route_is_public_and_db_free(client, auth_on, monkeypatch):
+    from app.database import session
+
+    def boom(*args, **kwargs):
+        raise AssertionError("liveness must not touch the database")
+
+    monkeypatch.setattr(session, "SessionLocal", boom)
+    monkeypatch.setattr(session, "check_db", boom)
+    resp = client.get("/health/live")
+    assert resp.status_code == 200 and resp.json()["status"] == "alive"
+    assert client.head("/health/live").status_code == 200
+
+
+def test_keep_alive_ping_and_schedule(monkeypatch):
+    from app.services import job_service
+
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+    monkeypatch.setattr(settings, "KEEP_ALIVE_URL", "https://my-app.onrender.com")
+    monkeypatch.setattr(settings, "KEEP_ALIVE_INTERVAL_MINUTES", 10)
+    monkeypatch.setattr(job_service.httpx, "get", lambda url, timeout, headers: calls.append(url) or FakeResponse())
+    monkeypatch.setattr(job_service.JobState, "last_ping_at", None)
+    monkeypatch.setattr(job_service.JobState, "last_ping_result", None)
+
+    now = utcnow()
+    monkeypatch.setattr(job_service.JobState, "started_at", now)
+    assert job_service.keep_alive_due(now) is False  # freshly started instance is awake anyway
+    assert job_service.keep_alive_due(now + timedelta(minutes=10)) is True
+
+    result = job_service.keep_alive_ping()
+    assert result["ok"] is True
+    assert calls == ["https://my-app.onrender.com/health/live"]
+    assert job_service.keep_alive_due(utcnow() + timedelta(minutes=5)) is False
+    assert job_service.JobState.snapshot()["last_ping_result"]["status_code"] == 200
+
+    monkeypatch.setattr(settings, "KEEP_ALIVE_URL", "")
+    assert settings.keep_alive_enabled is False
+    assert job_service.keep_alive_due(now + timedelta(days=1)) is False
+
+
+def test_keep_alive_url_defaults_to_render_url(monkeypatch):
+    from app.config import _keep_alive_url
+
+    for name in ("KEEP_ALIVE_URL", "RENDER_EXTERNAL_URL", "PUBLIC_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    assert _keep_alive_url() == ""
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://public.example.test")
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://svc.onrender.com/")
+    assert _keep_alive_url() == "https://svc.onrender.com"  # Render's own URL wins over PUBLIC_BASE_URL
+    monkeypatch.setenv("KEEP_ALIVE_URL", "https://custom.example.test")
+    assert _keep_alive_url() == "https://custom.example.test"

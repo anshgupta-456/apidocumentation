@@ -31,8 +31,10 @@ login page and the static files, so there is no separate frontend to host. You n
 5. Optional: set `PUBLIC_BASE_URL=https://<your-service>.onrender.com` and
    `ALERT_WEBHOOK_URL=<slack/discord webhook>` in *Environment* to get alerts with links.
 
-> The free Render plan sleeps after ~15 minutes without traffic; the first request then
-> takes ~30 s. Scheduled scans only run while the service is awake.
+> **Sleeping is handled for you.** The free Render plan sleeps after 15 minutes without
+> traffic. The app pings its own public URL (`RENDER_EXTERNAL_URL`, set by Render) every
+> 10 minutes, so it stays awake and scheduled scans keep running. See
+> [Keeping a free instance awake](#keeping-a-free-instance-awake) for limits and the backup bot.
 
 Manual setup instead of a blueprint: *New → Web Service* →
 Build command `pip install -r requirements.txt`, Start command
@@ -87,12 +89,37 @@ fly deploy
 | `PUBLIC_BASE_URL` | no | – | Used for links in alerts |
 | `LOG_INCLUDE_PREFIXES` | no | `/api/` | Which paths are captured |
 | `REDACT_FIELDS` | no | password, token, … | JSON keys masked before logs are stored |
+| `KEEP_ALIVE_URL` | no | `RENDER_EXTERNAL_URL` | Public URL the app pings to stay awake (automatic on Render) |
+| `KEEP_ALIVE_INTERVAL_MINUTES` | no | `10` | Ping interval; keep it under 15 on Render, `0` turns it off |
 | `DEMO_ENABLED` | no | `true` | Show the demo traffic generator |
 | `CORS_ORIGINS` | no | – | Only if another website calls this API from the browser |
 
+## Keeping a free instance awake
+
+Free web services on Render sleep after **15 minutes** without incoming requests and take
+about a minute to wake up. Two layers keep this app awake:
+
+1. **Built-in pinger (automatic).** A background job requests `<your-url>/health/live` every
+   10 minutes. On Render the URL comes from `RENDER_EXTERNAL_URL`, so nothing needs to be
+   configured; on other hosts set `KEEP_ALIVE_URL`. Its status is shown on the **Settings** page.
+2. **GitHub Actions backup bot (optional).** `.github/workflows/keep-alive.yml` pings the same
+   URL every 10 minutes from outside, which also wakes the service if it ever fell asleep. Enable
+   it in GitHub: *Settings → Secrets and variables → Actions → Variables → New repository variable*
+   named `KEEP_ALIVE_URL` with your Render URL. (Free for public repositories. GitHub may delay
+   scheduled runs and disables them after 60 days without commits; re-enable from the *Actions* tab.)
+
+Things to know:
+
+- **Render free hours:** 750 instance hours per workspace per month. One always-on service uses
+  ~744, so this only fits if it is your *only* free web service. A second always-on free service
+  would run out of hours and be suspended until the next month.
+- **Database stays cheap:** pings and Render's health check use `/health/live`, which never
+  touches the database, so Neon can still scale to zero between real requests and scheduled jobs.
+- To turn the keep-alive off, set `KEEP_ALIVE_INTERVAL_MINUTES=0`.
+
 ## After deploying
 
-- `GET /health` should return `{"status": "ok", "database": "ok", ...}`.
+- `GET /health` should return `{"status": "ok", "database": "ok", ...}` (`/health/live` is the lightweight, database-free check).
 - Open **Settings** in the dashboard: the *Production checklist* shows what is still missing.
 - Point real clients at the `/api/...` routes (or add your own routes under `/api/`) — that
   traffic is what the validator learns from.
