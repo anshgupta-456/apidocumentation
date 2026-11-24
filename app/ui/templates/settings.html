@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}Settings{% endblock %}
+{% block crumbs %}<span class="current">Settings</span>{% endblock %}
+{% block content %}
+{% set c = config %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p>Configuration is read from environment variables (see <span class="mono">.env.example</span>). Change them on your host and restart to apply.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/health" target="_blank" rel="noopener">Health check</a>
+  </div>
+</div>
+
+<div class="grid grid-2-eq" style="margin-bottom:16px">
+  <div class="card">
+    <div class="card-head"><h2>Production checklist</h2></div>
+    <ul class="check-list">
+      {% set items = [
+        (c.auth_enabled, 'Dashboard login enabled', 'ADMIN_PASSWORD is set — management API and dashboard require sign-in.', 'Set ADMIN_PASSWORD before exposing the app on the internet.'),
+        (c.database_backend == 'postgresql', 'PostgreSQL database', 'Data survives restarts and redeploys.', 'Using ' ~ c.database_backend ~ '. Set DATABASE_URL to a PostgreSQL URL when hosting — container disks are wiped on redeploy.'),
+        (c.secret_key_configured, 'Stable session secret', 'SECRET_KEY is set.', 'Set SECRET_KEY to a long random string (sessions otherwise derive from the password).'),
+        (c.log_retention_days > 0, 'Log retention', 'Captured traffic older than ' ~ c.log_retention_days ~ ' days is deleted automatically.', 'LOG_RETENTION_DAYS=0 keeps logs forever — your database will keep growing.'),
+        (c.auto_scan_interval_minutes > 0, 'Scheduled drift scans', 'Every ' ~ c.auto_scan_interval_minutes ~ ' minutes.', 'Set AUTO_SCAN_INTERVAL_MINUTES (e.g. 60) to detect drift without clicking “Scan”.'),
+        (c.alerts_configured, 'Alerts', 'New ' ~ c.alert_min_severity ~ '-severity drift is posted to your webhook.', 'Set ALERT_WEBHOOK_URL (Slack, Discord, Teams…) to be notified about new drift.'),
+        (c.ai_key_configured, 'AI explanations', 'Groq · ' ~ c.ai_model, 'Optional: set GROQ_API_KEY for LLM explanations. The rule-based engine works without it.'),
+      ] %}
+      {% for ok, title, good, todo in items %}
+      <li>
+        <span class="ic {{ 'ok' if ok else 'todo' }}">{{ '✓' if ok else '!' }}</span>
+        <div><b>{{ title }}</b><span>{{ good if ok else todo }}</span></div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Background jobs</h2></div>
+      <div class="kv">
+        <div>Auto-scan</div><div>{{ ('every ' ~ jobs.auto_scan_interval_minutes ~ ' min') if jobs.auto_scan_interval_minutes else 'off' }}</div>
+        <div>Last scan</div><div>{% if jobs.last_scan_result %}{{ jobs.last_scan_at|ago }} · {{ jobs.last_scan_result.scanned }} scanned, {{ jobs.last_scan_result.with_drift }} with drift{% else %}<span class="muted">not run yet</span>{% endif %}</div>
+        {% if jobs.next_scan_at %}<div>Next scan</div><div>{{ jobs.next_scan_at|ago }}</div>{% endif %}
+        <div>Retention</div><div>{{ (jobs.log_retention_days ~ ' days') if jobs.log_retention_days else 'keep forever' }}</div>
+        <div>Last cleanup</div><div>{% if jobs.last_cleanup_at %}{{ jobs.last_cleanup_at|ago }} · {{ jobs.last_cleanup_deleted }} removed{% else %}<span class="muted">not run yet</span>{% endif %}</div>
+      </div>
+      <div class="card-body actions" style="border-top:1px solid var(--border)">
+        <button class="btn btn-primary" data-action="run-scan-job">Run scan now</button>
+        <button class="btn" data-action="run-cleanup" {{ 'disabled' if not jobs.log_retention_days }}>Run cleanup now</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Alerts</h2>{% if c.alerts_configured %}<span class="badge tag-good">Configured</span>{% else %}<span class="badge plain">Not configured</span>{% endif %}</div>
+      <div class="card-body">
+        {% if c.alerts_configured %}
+          <p style="margin:0 0 12px">New drift events with severity <b>{{ c.alert_min_severity }}</b> or higher are sent to your webhook{% if not c.public_base_url %}. Set <span class="mono">PUBLIC_BASE_URL</span> to include links{% endif %}.</p>
+          {% if last_alert %}<p class="small muted" style="margin:0 0 12px">Last delivery: {{ 'OK' if last_alert.ok else 'failed' }}{% if last_alert.status_code %} ({{ last_alert.status_code }}){% endif %}{% if last_alert.error %} — {{ last_alert.error }}{% endif %}</p>{% endif %}
+          <button class="btn" data-action="test-alert">Send test alert</button>
+        {% else %}
+          <p class="muted" style="margin:0">Set <span class="mono">ALERT_WEBHOOK_URL</span> to a Slack / Discord / Teams incoming-webhook URL. Optional: <span class="mono">ALERT_MIN_SEVERITY</span> (low, medium, high).</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Current configuration</h2><span class="small muted">secrets are never shown</span></div>
+  <div class="kv">
+    <div>Version</div><div class="mono">{{ c.version }}</div>
+    <div>Database</div><div class="mono">{{ c.database_backend }}</div>
+    <div>Authentication</div><div>{{ ('on · user ' ~ c.admin_username) if c.auth_enabled else 'off' }}{% if c.api_key_configured %} · API key enabled{% endif %}</div>
+    <div>Explanation engine</div><div>{{ ('Groq · ' ~ c.ai_model) if c.ai_provider == 'groq' else 'rule-based' }}</div>
+    <div>Monitored prefixes</div><div class="mono">{{ c.monitored_prefixes|join(', ') }}</div>
+    <div>Masked fields</div><div class="mono small">{{ c.redacted_fields|join(', ') }}</div>
+    <div>Max captured body</div><div>{{ (c.log_max_body_bytes / 1024)|round(1) }} KB</div>
+    <div>Inference window</div><div>last {{ c.inference_sample_limit }} requests per endpoint</div>
+    <div>Demo tools</div><div>{{ 'enabled' if c.demo_enabled else 'disabled' }}</div>
+    <div>CORS origins</div><div class="mono">{{ c.cors_origins|join(', ') or '—' }}</div>
+  </div>
+</div>
+{% endblock %}

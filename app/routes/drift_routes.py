@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database.models import DRIFT_STATUSES, SEVERITIES, DriftEvents, utcnow
 from app.database.session import get_db
-from app.schemas.api_schemas import DriftStatusUpdate, ScanRequest
+from app.schemas.api_schemas import BulkDriftUpdate, DriftStatusUpdate, ScanRequest
 from app.services.drift_detection_service import SchemaDriftService
 
 router = APIRouter(tags=["Drift detection"])
@@ -113,6 +113,16 @@ def export_drift_events(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="drift-events-{stamp}.csv"'},
     )
+
+
+@router.post("/drift-events/bulk")
+def bulk_update_drift_events(payload: BulkDriftUpdate, db: Session = Depends(get_db)):
+    """Change the status of (or delete) many drift events at once."""
+    if not payload.delete and not payload.status:
+        raise HTTPException(status_code=422, detail="Provide a status or delete=true")
+    count = SchemaDriftService.bulk_update(db, payload.ids, payload.status, payload.delete)
+    action = "deleted" if payload.delete else f"marked {payload.status}"
+    return {"message": f"{count} event(s) {action}", "updated": count}
 
 
 def _get_event(db: Session, event_id: uuid.UUID) -> DriftEvents:

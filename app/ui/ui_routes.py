@@ -1,3 +1,4 @@
+import hashlib
 import json
 import math
 import uuid
@@ -6,18 +7,26 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.auth import current_user, require_ui_login
 from app.config import BASE_DIR, settings
 from app.database.models import DriftEvents, OpenAPISpec
 from app.database.session import get_db
 from app.routes.drift_routes import _filtered_events
+from app.routes.traffic_routes import config_summary
+from app.services.alert_service import AlertService
+from app.services.drift_detection_service import SchemaDriftService
+from app.services.job_service import JobState
 from app.services.openapi_extraction_service import OpenAPIExtractionService
+from app.services.playground_service import PlaygroundService
 from app.services.spec_diff_service import SpecDiffService
-from app.services.traffic_service import TrafficService
+from app.services.traffic_service import RANGES, TrafficService, resolve_range
 
-router = APIRouter(prefix="/ui", tags=["UI"], include_in_schema=False)
+public_router = APIRouter(prefix="/ui", include_in_schema=False)
+router = APIRouter(prefix="/ui", tags=["UI"], include_in_schema=False, dependencies=[Depends(require_ui_login)])
 templates = Jinja2Templates(directory=str(BASE_DIR / "ui" / "templates"))
 PAGE_SIZE = 25
 
@@ -46,6 +55,12 @@ def time_ago(value) -> str:
     if not dt:
         return "never"
     seconds = int((datetime.now(timezone.utc) - dt).total_seconds())
+    if seconds < 0:
+        seconds = abs(seconds)
+        for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+            if seconds >= size:
+                return f"in {seconds // size}{unit}"
+        return "in a moment"
     if seconds < 45:
         return "just now"
     for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
@@ -58,15 +73,42 @@ def pretty_json(value) -> str:
     return json.dumps(value, indent=2, default=str, ensure_ascii=False)
 
 
+def compact_number(value) -> str:
+    if value is None:
+        return "—"
+    value = float(value)
+    for suffix, size in (("M", 1_000_000), ("K", 10_000)):
+        if abs(value) >= size:
+            divisor = size if suffix == "M" else 1000
+            return f"{value / divisor:.1f}".rstrip("0").rstrip(".") + suffix
+    return f"{int(value):,}" if value == int(value) else f"{value:,.1f}"
+
+
 templates.env.filters["dt"] = fmt_datetime
 templates.env.filters["ago"] = time_ago
 templates.env.filters["pretty"] = pretty_json
+templates.env.filters["compact"] = compact_number
+templates.env.filters["tojson_attr"] = lambda v: json.dumps(v, default=str)
 templates.env.globals["settings"] = settings
+templates.env.globals["RANGES"] = RANGES
+
+
+def _asset_version() -> str:
+    """Content hash of the static assets, so browsers fetch fresh CSS/JS after every deploy."""
+    digest = hashlib.sha256()
+    for path in sorted((BASE_DIR / "ui" / "static").rglob("*")):
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+templates.env.globals["asset_v"] = _asset_version()
 
 
 def render(request: Request, name: str, context: dict, status_code: int = 200):
     context.setdefault("active", "")
     context["ai_provider"] = "groq" if settings.ai_available else "rule-based"
+    context["user"] = current_user(request)
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
@@ -92,13 +134,23 @@ def not_found(request: Request, message: str):
     return render(request, "error.html", {"message": message}, status_code=404)
 
 
+# ---------------------------------------------------------------------- public pages
+@public_router.get("/login")
+def login_page(request: Request, next: str = "/ui"):
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/ui"
+    if not settings.auth_enabled or current_user(request):
+        return RedirectResponse(next, status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"next": next, "settings": settings})
+
+
 # ---------------------------------------------------------------------- pages
 @router.get("")
 @router.get("/")
-def dashboard(request: Request, db: Session = Depends(get_db)):
-    stats = TrafficService.stats(request.app, db)
-    max_traffic = max([d["requests"] for d in stats["traffic"]] + [1])
-    return render(request, "dashboard.html", {"active": "dashboard", "stats": stats, "max_traffic": max_traffic})
+def dashboard(request: Request, range: Optional[str] = None, db: Session = Depends(get_db)):
+    range_key = resolve_range(range)
+    stats = TrafficService.stats(request.app, db, range_key)
+    return render(request, "dashboard.html", {"active": "dashboard", "stats": stats, "range": range_key})
 
 
 @router.get("/endpoints")
@@ -114,8 +166,19 @@ def endpoints_page(request: Request, all: bool = False, db: Session = Depends(ge
             "documented": sum(1 for e in overview if e["documented"]),
             "covered": sum(1 for e in overview if e["documented"] and e["requests"]),
             "undocumented": sum(1 for e in overview if not e["documented"]),
+            "with_drift": sum(1 for e in overview if e["open_drifts"]),
         },
     )
+
+
+@router.get("/endpoint")
+def endpoint_page(
+    request: Request, path: str, method: str = "GET", range: Optional[str] = None, db: Session = Depends(get_db)
+):
+    detail = TrafficService.endpoint_detail(request.app, db, path, method, resolve_range(range))
+    if detail is None:
+        return not_found(request, f"{method.upper()} {path} is neither documented nor observed.")
+    return render(request, "endpoint.html", {"active": "endpoints", "d": detail})
 
 
 @router.get("/drifts")
@@ -165,15 +228,42 @@ def drift_detail(request: Request, drift_id: str, db: Session = Depends(get_db))
     if not event:
         return not_found(request, "This drift event does not exist (it may have been deleted).")
     data = event.to_dict()
+    detail = data["drift_detail"]
     explanation = data["ai_explanation"]
+    schema_rows = {}
+    for location in ("response", "request"):
+        expected = (detail.get("expected_schema") or {}).get(location) or {}
+        runtime = (detail.get("runtime_schema") or {}).get(location) or {}
+        schema_rows[location] = SchemaDriftService.field_rows(expected, runtime, location) if (expected or runtime) else []
     return render(
         request,
         "drift_detail.html",
         {
             "active": "drifts",
             "event": data,
+            "schema_rows": schema_rows,
             "explanation": explanation if isinstance(explanation, dict) else None,
             "raw_explanation": explanation if not isinstance(explanation, dict) else None,
+        },
+    )
+
+
+@router.get("/playground")
+def playground_page(request: Request, all: bool = False):
+    operations = PlaygroundService.operations(request.app, monitored_only=not all)
+    return render(request, "playground.html", {"active": "playground", "operations": operations, "show_all": all})
+
+
+@router.get("/settings")
+def settings_page(request: Request):
+    return render(
+        request,
+        "settings.html",
+        {
+            "active": "settings",
+            "config": config_summary(),
+            "jobs": JobState.snapshot(),
+            "last_alert": AlertService.last_status,
         },
     )
 

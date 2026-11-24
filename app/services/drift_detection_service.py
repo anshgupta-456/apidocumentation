@@ -376,7 +376,71 @@ class SchemaDriftService:
         db.add(event)
         db.commit()
         db.refresh(event)
+
+        from app.services.alert_service import AlertService
+
+        try:
+            AlertService.notify_new_event(event.to_dict())
+        except Exception:  # alerts must never break detection
+            logger.exception("Could not dispatch drift alert")
         return event, True
+
+    # ------------------------------------------------------------------ presentation
+    @staticmethod
+    def field_rows(expected: dict, runtime: dict, location: str = "response", free_form_root: bool = False) -> List[dict]:
+        """Side-by-side documented vs observed view of every field, with a per-field verdict."""
+        expected = expected or {}
+        runtime = runtime or {}
+        categories = SchemaDriftService.compare(expected, runtime, location, free_form_root) if runtime else empty_categories()
+        verdicts: Dict[str, str] = {}
+        for field in categories["missing_in_runtime"]:
+            verdicts[field] = "missing"
+        for field in categories["missing_in_openapi"]:
+            verdicts[field] = "undocumented"
+        for key, verdict in (
+            ("required_mismatches", "required"),
+            ("nullable_mismatches", "nullable"),
+            ("type_mismatches", "type"),
+        ):
+            for item in categories[key]:
+                verdicts[item["field"]] = verdict
+
+        undocumented_roots = categories["missing_in_openapi"]
+        rows = []
+        for field in sorted(set(expected) | set(runtime), key=lambda f: (f.replace("[]", ""), depth(f))):
+            exp, run = expected.get(field), runtime.get(field)
+            verdict = verdicts.get(field)
+            if verdict is None:
+                if exp and run:
+                    verdict = "ok"
+                elif run and any(a in undocumented_roots for a in ancestors(field)):
+                    verdict = "undocumented-child"
+                elif run:
+                    verdict = "free-form"
+                else:
+                    verdict = "unobserved" if runtime else "no-data"
+            rows.append(
+                {
+                    "field": field,
+                    "depth": depth(field),
+                    "documented": exp,
+                    "observed": run,
+                    "verdict": verdict,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def bulk_update(db: Session, ids: List, status: Optional[str] = None, delete: bool = False) -> int:
+        events = db.query(DriftEvents).filter(DriftEvents.id.in_(ids)).all()
+        for event in events:
+            if delete:
+                db.delete(event)
+            elif status:
+                event.status = status
+                event.resolved_at = utcnow() if status in ("resolved", "ignored") else None
+        db.commit()
+        return len(events)
 
     # ------------------------------------------------------------------ orchestration
     @staticmethod

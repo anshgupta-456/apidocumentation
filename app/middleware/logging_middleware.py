@@ -25,9 +25,36 @@ def _parse_json(raw: bytes):
     if not raw:
         return None
     try:
-        return json.loads(raw)
+        return redact(json.loads(raw))
     except (ValueError, UnicodeDecodeError):
         return None
+
+
+def _is_sensitive(key: str) -> bool:
+    key = key.lower()
+    return key in settings.REDACT_FIELDS or any(
+        marker in key for marker in ("password", "secret", "token") if marker in settings.REDACT_FIELDS
+    )
+
+
+def redact(value):
+    """Mask sensitive values while keeping their JSON type, so schema inference still works."""
+    if isinstance(value, dict):
+        masked = {}
+        for key, child in value.items():
+            if _is_sensitive(str(key)) and not isinstance(child, (dict, list)):
+                if isinstance(child, bool) or child is None:
+                    masked[key] = child
+                elif isinstance(child, (int, float)):
+                    masked[key] = 0
+                else:
+                    masked[key] = "[REDACTED]"
+            else:
+                masked[key] = redact(child)
+        return masked
+    if isinstance(value, list):
+        return [redact(item) for item in value]
+    return value
 
 
 class LoggingMiddleware:

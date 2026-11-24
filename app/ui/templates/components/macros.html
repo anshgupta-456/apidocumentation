@@ -17,6 +17,10 @@
 {% else %}<span class="status-err">{{ code }}</span>{% endif %}
 {%- endmacro %}
 
+{% macro endpoint_link(method_name, path) -%}
+<a class="row-link" href="/ui/endpoint?method={{ method_name }}&path={{ path|urlencode }}">{{ method(method_name) }} <span class="path">{{ path }}</span></a>
+{%- endmacro %}
+
 {% macro code(id, content, lang="json") -%}
 <div class="code-wrap">
   <button class="btn btn-sm copy-btn" data-action="copy" data-target="{{ id }}">Copy</button>
@@ -24,7 +28,7 @@
 </div>
 {%- endmacro %}
 
-{% macro empty(title, text, icon="inbox") -%}
+{% macro empty(title, text) -%}
 <div class="empty">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
   <h3>{{ title }}</h3>
@@ -46,11 +50,90 @@
 {% endif %}
 {%- endmacro %}
 
+{% macro range_pills(current, base_url) -%}
+<div class="pills" role="group" aria-label="Time range">
+  {% for key, cfg in RANGES.items() %}
+  <a href="{{ base_url }}{{ '&' if '?' in base_url else '?' }}range={{ key }}" class="{{ 'active' if current == key }}" title="{{ cfg.label }}">{{ key }}</a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro traffic_chart(traffic, bucket, label) -%}
+<div class="chart" data-chart="{{ {'type': 'line', 'label': label, 'bucket': bucket, 'x': traffic|map(attribute='t')|list,
+  'series': [
+    {'name': 'Requests', 'color': '--series-1', 'area': True, 'values': traffic|map(attribute='requests')|list},
+    {'name': 'Errors (4xx/5xx)', 'color': '--series-2', 'values': traffic|map(attribute='errors')|list}
+  ], 'empty': 'No requests in this range'}|tojson_attr }}"></div>
+{%- endmacro %}
+
+{% macro latency_chart(traffic, bucket) -%}
+<div class="chart sm" data-chart="{{ {'type': 'line', 'label': 'Average latency', 'bucket': bucket, 'unit': 'ms', 'x': traffic|map(attribute='t')|list,
+  'series': [{'name': 'Avg latency', 'color': '--series-1', 'values': traffic|map(attribute='avg_latency_ms')|list}],
+  'empty': 'No latency data in this range'}|tojson_attr }}"></div>
+{%- endmacro %}
+
+{% macro data_table(traffic) -%}
+<details class="data-table">
+  <summary>View as table</summary>
+  <div class="table-wrap">
+  <table class="table compact">
+    <thead><tr><th>Period start (UTC)</th><th class="num">Requests</th><th class="num">Errors</th><th class="num">Avg latency</th></tr></thead>
+    <tbody>
+    {% for row in traffic|reverse %}{% if row.requests %}
+      <tr><td class="mono small">{{ row.t[:16]|replace('T', ' ') }}</td><td class="num">{{ row.requests }}</td><td class="num">{{ row.errors }}</td><td class="num">{{ row.avg_latency_ms }} ms</td></tr>
+    {% endif %}{% else %}<tr><td colspan="4" class="muted">No data</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+{%- endmacro %}
+
+{% macro status_codes(codes) -%}
+{% set total = codes.values()|sum %}
+{% if total %}
+<div class="segbar" role="img" aria-label="Status code distribution: {% for k, v in codes.items() %}{{ k }} {{ v }}{{ ', ' if not loop.last }}{% endfor %}">
+  {% for k, v in codes.items() %}{% if v %}
+  {% set pct = v / total * 100 %}
+  <div class="s-{{ k }}" style="flex: {{ v }} 1 0" tabindex="0" data-tip-title="{{ k }} responses" data-tip-label="{{ '%.1f'|format(pct) }}% of requests" data-tip-value="{{ v }}">{% if pct >= 12 %}{{ '%.0f'|format(pct) }}%{% endif %}</div>
+  {% endif %}{% endfor %}
+</div>
+{% else %}<div class="segbar-empty"></div>{% endif %}
+<div class="seg-legend">
+  {% for k, label in [('2xx', 'Success'), ('3xx', 'Redirect'), ('4xx', 'Client error'), ('5xx', 'Server error')] %}
+  <div><i class="s-{{ k }}" style="background: var({{ {'2xx': '--good', '3xx': '--series-1', '4xx': '--warning', '5xx': '--critical'}[k] }})"></i>{{ k }} · {{ label }}<b>{{ codes[k] }}</b></div>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro schema_diff(rows, empty_text="No fields") -%}
+{% if rows %}
+<div class="table-wrap">
+<table class="table compact schema-table">
+  <thead><tr><th>Field</th><th>Documented</th><th>Observed</th><th class="num">Presence</th><th>Verdict</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    {% set d = r.documented %}{% set o = r.observed %}
+    <tr class="v-{{ r.verdict }}">
+      <td class="field-name" style="padding-left: {{ 14 + r.depth * 18 }}px" title="{{ r.field }}">{% if r.depth %}<span class="indent">└ </span>{% endif %}{{ r.field.split('.')|last }}</td>
+      <td>{% if d %}<span class="type">{{ d.alt_types|join(' | ') if d.alt_types else d.type }}{{ '?' if d.nullable }}</span> <span class="muted small">{{ 'required' if d.required else 'optional' }}</span>{% else %}<span class="none">not documented</span>{% endif %}</td>
+      <td>{% if o %}<span class="type">{{ o.types|join(' | ') or 'null' }}{{ '?' if o.nullable }}</span>{% if o.example is not none %} <span class="muted small mono" title="example value">e.g. {{ o.example|tojson|truncate(28) }}</span>{% endif %}{% else %}<span class="none">never seen</span>{% endif %}</td>
+      <td class="num">{{ (o.presence_percent ~ '%') if o else '—' }}</td>
+      <td><span class="verdict">{{ {'ok': '✓ matches', 'undocumented': '+ undocumented', 'undocumented-child': '+ nested', 'missing': '− missing', 'type': '≠ type', 'nullable': '∅ null seen', 'required': '! not always sent', 'unobserved': 'not seen', 'free-form': 'free-form', 'no-data': 'no data'}[r.verdict] }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty" style="padding:22px">{{ empty_text }}</div>
+{% endif %}
+{%- endmacro %}
+
 {% macro schema_table(fields, runtime=False) -%}
 {% if fields %}
 <div class="table-wrap">
 <table class="table compact">
-  <thead><tr><th>Field</th><th>Type</th><th>Nullable</th><th>{{ 'Presence' if runtime else 'Required' }}</th>{% if runtime %}<th>Example</th>{% endif %}</tr></thead>
+  <thead><tr><th>Field</th><th>Type</th><th>Nullable</th><th>{{ 'Presence' if runtime else 'Required' }}</th></tr></thead>
   <tbody>
   {% for name, f in fields|dictsort %}
     <tr>
@@ -58,7 +141,6 @@
       <td class="mono small">{% if runtime %}{{ f.types|join(' | ') or 'null' }}{% else %}{{ f.alt_types|join(' | ') if f.alt_types else f.type }}{% if f.format %} <span class="muted">({{ f.format }})</span>{% endif %}{% endif %}</td>
       <td>{{ 'yes' if f.nullable else '—' }}</td>
       <td>{% if runtime %}{{ f.presence_percent }}%{% else %}{{ 'required' if f.required else 'optional' }}{% endif %}</td>
-      {% if runtime %}<td class="mono small muted">{{ f.example if f.example is not none else '' }}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>

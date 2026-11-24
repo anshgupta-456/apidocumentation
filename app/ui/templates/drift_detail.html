@@ -20,6 +20,7 @@
       <span>Issues <b>{{ detail.issues|length }}</b></span>
       {% if detail.sample_size %}<span>Samples <b>{{ detail.sample_size.response or 0 }}</b> responses · <b>{{ detail.sample_size.request or 0 }}</b> requests</span>{% endif %}
       {% if ev.resolved_at %}<span>Closed <b>{{ ev.resolved_at|ago }}</b></span>{% endif %}
+      <a href="/ui/endpoint?method={{ ev.method }}&path={{ ev.endpoint|urlencode }}">View endpoint →</a>
     </div>
   </div>
   <div class="actions">
@@ -99,12 +100,30 @@
   </div>
 </div>
 
+<!-- Schema comparison -->
+{% if schema_rows.response or schema_rows.request %}
+<div class="card" data-tabs>
+  <div class="card-head plain"><h2>Contract vs. reality <span class="sub">at detection time</span></h2></div>
+  <div class="tabs">
+    {% for loc in ['response', 'request'] %}
+    {% set bad = schema_rows[loc]|selectattr('verdict', 'in', ['undocumented', 'missing', 'type', 'nullable', 'required'])|list|length %}
+    <button class="tab {{ 'active' if loop.first }}" data-tab="{{ loc }}">{{ loc|capitalize }}{% if bad %}<span class="badge sev-high">{{ bad }}</span>{% endif %}</button>
+    {% endfor %}
+  </div>
+  {% for loc in ['response', 'request'] %}
+  <div class="tab-panel {{ 'active' if loop.first }}" data-panel="{{ loc }}">
+    {{ ui.schema_diff(schema_rows[loc], "No " ~ loc ~ " schema recorded for this event.") }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Patches -->
 <div class="card" data-tabs>
-  <div class="card-head" style="border-bottom:none;padding-bottom:4px">
+  <div class="card-head plain">
     <h2>Suggested fixes</h2>
     <div class="actions">
-      <a id="generated-link" class="btn btn-sm btn-ghost" href="/patch/generated-spec" hidden>Download generated spec</a>
+      <a id="generated-link" class="btn btn-sm btn-ghost" href="/patch/generated-spec" download hidden>Download generated spec</a>
       <button class="btn btn-sm btn-primary" data-action="apply-patch" data-id="{{ ev.id }}" title="Merge the OpenAPI patch into the live spec and write openapi.generated.json">Apply OpenAPI patch</button>
     </div>
   </div>
@@ -120,7 +139,7 @@
         {% else %}
           {{ ui.code("openapi-patch", ev.openapi_patch, "text") }}
         {% endif %}
-        <p class="small muted" style="margin:10px 0 0">Applying writes <span class="mono">{{ settings.GENERATED_SPEC_PATH }}</span> — the running code and the live spec are never modified.</p>
+        <p class="small muted" style="margin:10px 0 0">Applying writes <span class="mono">openapi.generated.json</span> on the server — the running code and the live spec are never modified.</p>
       {% else %}
         <p class="muted">No OpenAPI patch for this event.</p>
       {% endif %}
@@ -134,31 +153,6 @@
     </div>
   </div>
 </div>
-
-<!-- Schemas -->
-{% if detail.runtime_schema %}
-<div class="card" data-tabs>
-  <div class="card-head" style="border-bottom:none;padding-bottom:4px"><h2>Documented vs. observed schema</h2></div>
-  <div class="tabs">
-    <button class="tab active" data-tab="response">Response</button>
-    <button class="tab" data-tab="request">Request</button>
-  </div>
-  {% for loc in ['response', 'request'] %}
-  <div class="tab-panel {{ 'active' if loop.first }}" data-panel="{{ loc }}">
-    <div class="grid grid-2-eq" style="padding:16px 18px">
-      <div>
-        <h4 class="small muted" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em">Documented (OpenAPI)</h4>
-        <div class="card">{{ ui.schema_table(detail.expected_schema.get(loc, {})) }}</div>
-      </div>
-      <div>
-        <h4 class="small muted" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em">Observed ({{ detail.sample_size.get(loc, 0) }} samples)</h4>
-        <div class="card">{{ ui.schema_table(detail.runtime_schema.get(loc, {}), runtime=True) }}</div>
-      </div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
 
 <!-- Notes -->
 <div class="card">

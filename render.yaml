@@ -1,0 +1,26 @@
+# Render Blueprint: New > Blueprint > pick this repository.
+# You will be asked for DATABASE_URL (e.g. a free Neon/Supabase Postgres URL) and ADMIN_PASSWORD.
+services:
+  - type: web
+    name: api-contract-validator
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: LOG_RETENTION_DAYS
+        value: "30"
+      - key: AUTO_SCAN_INTERVAL_MINUTES
+        value: "60"

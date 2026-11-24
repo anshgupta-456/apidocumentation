@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>Sign in · API Contract Validator</title>
+  <script>
+    (function () {
+      var saved = localStorage.getItem("theme");
+      var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}">
+</head>
+<body>
+<main class="auth-page content">
+  <div class="card auth-card">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      </div>
+      <div><div class="brand-name">Contract Validator</div><div class="brand-sub" style="color:var(--muted)">API drift monitoring</div></div>
+    </div>
+    <h1>Sign in</h1>
+    <p>Use the admin credentials configured on the server.</p>
+    <form id="login-form" data-next="{{ next }}" autocomplete="on">
+      <div class="form-error" id="login-error" role="alert" hidden></div>
+      <div class="field">
+        <label for="username">Username</label>
+        <input class="input full" id="username" name="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input class="input full" id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      </div>
+      <button class="btn btn-primary btn-lg" type="submit">Sign in</button>
+    </form>
+  </div>
+</main>
+<div class="toasts" id="toasts"></div>
+<script src="/static/js/app.js?v={{ asset_v }}"></script>
+</body>
+</html>

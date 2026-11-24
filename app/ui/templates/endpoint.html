@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}{{ d.method }} {{ d.endpoint }}{% endblock %}
+{% block crumbs %}<a href="/ui/endpoints">Endpoints</a><span>/</span><span class="current">{{ d.method }} {{ d.endpoint }}</span>{% endblock %}
+{% block content %}
+{% set a = d.all_time %}{% set rr = d.in_range %}
+{% set base_url = '/ui/endpoint?method=' ~ d.method ~ '&path=' ~ (d.endpoint|urlencode) %}
+
+<div class="page-head">
+  <div style="min-width:0">
+    <div class="title-row">
+      {{ ui.method(d.method) }}
+      <h1>{{ d.endpoint }}</h1>
+      {% if d.documented %}<span class="badge tag-good">Documented</span>{% else %}<span class="badge sev-medium">Undocumented</span>{% endif %}
+      {% if d.open_events %}<span class="badge sev-high">{{ d.open_events }} open drift</span>{% endif %}
+    </div>
+    <div class="meta">
+      {% if d.summary %}<span><b>{{ d.summary }}</b></span>{% endif %}
+      {% if d.tags %}<span>Tags <b>{{ d.tags|join(', ') }}</b></span>{% endif %}
+      {% if d.response_status %}<span>Success status <b>{{ d.response_status }}</b></span>{% endif %}
+      <span>Last request <b>{{ d.last_seen|ago if d.last_seen else 'never' }}</b></span>
+    </div>
+  </div>
+  <div class="actions">
+    {% if d.documented %}<a class="btn" href="/ui/playground?op={{ (d.method ~ ' ' ~ d.endpoint)|urlencode }}{{ '&all=true' if not d.monitored }}">Try it</a>{% endif %}
+    <a class="btn" href="/ui/logs?endpoint={{ d.endpoint|urlencode }}&method={{ d.method }}">Logs</a>
+    {% if a.total %}<button class="btn btn-ghost btn-danger" data-action="clear-logs" data-endpoint="{{ d.endpoint }}" data-method="{{ d.method }}">Clear logs</button>{% endif %}
+    <button class="btn btn-primary" data-action="scan-endpoint" data-endpoint="{{ d.endpoint }}" data-method="{{ d.method }}" {{ 'disabled' if not a.total }}>Scan for drift</button>
+  </div>
+</div>
+
+<div class="toolbar">
+  {{ ui.range_pills(d.range, base_url) }}
+  <label class="switch"><input type="checkbox" data-live><span class="track"></span> Live</label>
+  <span class="small muted" data-live-indicator hidden><span class="live-dot"></span> auto-refreshing</span>
+</div>
+
+<div class="grid grid-kpi">
+  <div class="card kpi"><div class="kpi-label">Requests</div><div class="kpi-value">{{ rr.total|compact }}</div><div class="kpi-sub">{{ a.total|compact }} all time</div></div>
+  <div class="card kpi"><div class="kpi-label">Error rate</div><div class="kpi-value {{ 'tone-critical' if rr.error_rate >= 20 else ('tone-serious' if rr.error_rate >= 5 else '') }}">{{ rr.error_rate }}<span class="unit">%</span></div><div class="kpi-sub">{{ rr.errors }} errors in range</div></div>
+  <div class="card kpi"><div class="kpi-label">Avg latency</div><div class="kpi-value">{{ rr.avg_latency_ms if rr.avg_latency_ms is not none else '—' }}{% if rr.avg_latency_ms is not none %}<span class="unit">ms</span>{% endif %}</div><div class="kpi-sub">p95 {{ rr.p95_latency_ms if rr.p95_latency_ms is not none else '—' }} ms</div></div>
+  <div class="card kpi"><div class="kpi-label">Samples analysed</div><div class="kpi-value">{{ d.schemas.response.samples }}</div><div class="kpi-sub">responses · {{ d.schemas.request.samples }} request bodies</div></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2>Traffic <span class="sub">{{ d.range_label }}</span></h2>
+      <div class="legend"><span><i style="background:var(--series-1)"></i>Requests</span><span><i style="background:var(--series-2)"></i>Errors (4xx/5xx)</span></div>
+    </div>
+    <div class="card-body">
+      {{ ui.traffic_chart(d.traffic, d.bucket, 'Requests and errors for ' ~ d.method ~ ' ' ~ d.endpoint) }}
+      {{ ui.data_table(d.traffic) }}
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Status codes <span class="sub">{{ d.range_label|lower }}</span></h2></div>
+      <div class="card-body">{{ ui.status_codes(rr.status_codes) }}</div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Average latency</h2></div>
+      <div class="card-body">{{ ui.latency_chart(d.traffic, d.bucket) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" data-tabs>
+  <div class="card-head plain">
+    <h2>Contract vs. reality</h2>
+    <span class="small muted">Documented OpenAPI schema compared field-by-field with the last {{ settings.INFERENCE_SAMPLE_LIMIT }} requests</span>
+  </div>
+  <div class="tabs">
+    {% for loc in ['response', 'request'] %}
+    {% set bad = d.schemas[loc].rows|selectattr('verdict', 'in', ['undocumented', 'missing', 'type', 'nullable', 'required'])|list|length %}
+    <button class="tab {{ 'active' if loop.first }}" data-tab="{{ loc }}">{{ loc|capitalize }}{% if bad %}<span class="badge sev-high">{{ bad }}</span>{% endif %}</button>
+    {% endfor %}
+  </div>
+  {% for loc in ['response', 'request'] %}
+  <div class="tab-panel {{ 'active' if loop.first }}" data-panel="{{ loc }}">
+    {{ ui.schema_diff(d.schemas[loc].rows, "No " ~ loc ~ " body documented or observed for this operation.") }}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid grid-2-eq" style="margin-top:16px">
+  <div class="card">
+    <div class="card-head"><h2>Drift history</h2><a class="small" href="/ui/drifts?endpoint={{ d.endpoint|urlencode }}&method={{ d.method }}">All →</a></div>
+    <div class="card-body flush">
+      {% if d.events %}
+      <table class="table">
+        <tbody>
+        {% for ev in d.events %}
+          <tr class="clickable" data-href="/ui/drift/{{ ev.id }}">
+            <td>{{ ui.severity(ev.severity) }}</td>
+            <td class="small">{{ ev.issue_count }} issue{{ 's' if ev.issue_count != 1 }} · seen {{ ev.occurrences }}×</td>
+            <td>{{ ui.status(ev.status) }}</td>
+            <td class="nowrap muted small">{{ ev.detected_at|ago }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        {{ ui.empty("No drift recorded", "Scan this endpoint to compare it against its contract.") }}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Recent requests</h2><a class="small" href="/ui/logs?endpoint={{ d.endpoint|urlencode }}&method={{ d.method }}">All logs →</a></div>
+    <div class="card-body flush">
+      {% if d.recent_logs %}
+      <table class="table">
+        <tbody>
+        {% for log in d.recent_logs %}
+          <tr>
+            <td class="path">{{ log.endpoint }}</td>
+            <td>{{ ui.http_status(log.status_code) }}</td>
+            <td class="num small">{{ log.latency_ms }} ms</td>
+            <td class="nowrap muted small">{{ log.created_at|ago }}</td>
+            <td style="text-align:right">
+              {% if d.documented %}<button class="btn btn-sm btn-ghost" data-action="replay" data-method="{{ log.method }}" data-path="{{ log.endpoint }}" data-route="{{ log.route_path or d.endpoint }}" data-body="{{ log.request_json|pretty if log.request_json is not none else '' }}">Replay</button>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        {{ ui.empty("No requests yet", "Requests to this operation will appear here.") }}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

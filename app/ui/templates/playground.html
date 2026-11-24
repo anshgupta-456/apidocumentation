@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+{% block title %}API playground{% endblock %}
+{% block crumbs %}<span class="current">API playground</span>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>API playground</h1>
+    <p>Send real requests to your API. Calls to monitored paths are captured like any other traffic, so you can reproduce drift and re-scan instantly.</p>
+  </div>
+  <div class="actions">
+    <div class="pills">
+      <a href="/ui/playground" class="{{ 'active' if not show_all }}">Monitored</a>
+      <a href="/ui/playground?all=true" class="{{ 'active' if show_all }}">All operations</a>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="pg-ops">{{ operations|tojson }}</script>
+
+{% if operations %}
+<div class="pg">
+  <div class="card">
+    <div class="filters" style="padding:10px 12px">
+      <input class="input full" id="op-search" type="search" placeholder="Filter operations…" data-search aria-label="Filter operations">
+    </div>
+    <div class="op-list" id="op-list">
+      {% for op in operations %}
+      <button class="op-item" data-index="{{ loop.index0 }}" title="{{ op.summary or '' }}">
+        {{ ui.method(op.method) }}<span class="path">{{ op.path }}</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card" id="pg-empty"><div class="empty">Pick an operation on the left.</div></div>
+    <div class="card" id="pg-builder" hidden>
+      <div class="url-bar">
+        <span id="pg-method" class="method">GET</span>
+        <div class="url" id="pg-url"></div>
+        <button class="btn" id="pg-curl" title="Copy as curl">curl</button>
+        <button class="btn btn-primary" id="pg-send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          Send
+        </button>
+      </div>
+      <div class="card-body stack">
+        <div class="small muted" id="pg-summary"></div>
+        <div data-section>
+          <div class="section-label">Path parameters</div>
+          <div class="param-grid" id="pg-path-params"></div>
+        </div>
+        <div data-section>
+          <div class="section-label">Query parameters</div>
+          <div class="param-grid" id="pg-query-params"></div>
+        </div>
+        <div id="pg-body-section">
+          <div class="actions" style="justify-content:space-between;margin-bottom:8px">
+            <div class="section-label" style="margin:0">JSON body</div>
+            <button class="btn btn-sm btn-ghost" id="pg-format" type="button">Format</button>
+          </div>
+          <textarea class="textarea code-input" id="pg-body" spellcheck="false" aria-label="JSON request body"></textarea>
+          <div class="small muted" style="margin-top:6px">Tip: add a field the schema doesn't know, or drop a required one, then scan the endpoint to see request drift.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="pg-response" hidden>
+      <div class="card-head">
+        <div class="response-meta">
+          <b>Response</b>
+          <span id="pg-status"></span>
+          <span class="muted" id="pg-time"></span>
+          <span class="muted" id="pg-size"></span>
+        </div>
+        <div class="actions">
+          <span class="badge tag-good" id="pg-captured" hidden>Captured for drift detection</span>
+          <a class="btn btn-sm btn-ghost" id="pg-endpoint-link" href="#">Endpoint details</a>
+          <button class="btn btn-sm" id="pg-scan" data-action="scan-endpoint" data-open="true">Scan now</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="code-wrap">
+          <button class="btn btn-sm copy-btn" data-action="copy" data-target="pg-output">Copy</button>
+          <pre class="code" id="pg-output" data-lang="json"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  {% call ui.empty("No operations", "No documented operations match the monitored prefixes.") %}
+    <a class="btn" href="/ui/playground?all=true">Show all operations</a>
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

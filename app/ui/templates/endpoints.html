@@ -6,22 +6,25 @@
 <div class="page-head">
   <div>
     <h1>Endpoints</h1>
-    <p>Documented routes vs. observed traffic. {{ documented }} documented · {{ covered }} with traffic{% if undocumented %} · <span class="status-warn">{{ undocumented }} undocumented</span>{% endif %}</p>
+    <p>{{ documented }} documented · {{ covered }} with traffic{% if with_drift %} · <span class="tone-critical">{{ with_drift }} with open drift</span>{% endif %}{% if undocumented %} · <span class="tone-serious">{{ undocumented }} undocumented</span>{% endif %}</p>
   </div>
   <div class="actions">
-    <div class="pills">
-      <a href="/ui/endpoints" class="{{ 'active' if not show_all }}">Monitored</a>
-      <a href="/ui/endpoints?all=true" class="{{ 'active' if show_all }}">All routes</a>
-    </div>
     <button class="btn btn-primary" data-action="scan-all">Scan all endpoints</button>
   </div>
 </div>
 
 <div class="card">
+  <div class="filters">
+    <input class="input" type="search" placeholder="Filter endpoints…" data-filter-table="endpoint-table" data-search aria-label="Filter endpoints">
+    <div class="pills">
+      <a href="/ui/endpoints" class="{{ 'active' if not show_all }}">Monitored</a>
+      <a href="/ui/endpoints?all=true" class="{{ 'active' if show_all }}">All routes</a>
+    </div>
+  </div>
   <div class="card-body flush">
     {% if endpoints %}
     <div class="table-wrap">
-    <table class="table dense">
+    <table class="table dense" id="endpoint-table">
       <thead>
         <tr>
           <th>Endpoint</th><th>Contract</th><th class="num">Requests</th><th class="num">Errors</th>
@@ -30,26 +33,25 @@
       </thead>
       <tbody>
       {% for ep in endpoints %}
-        <tr>
+        <tr class="clickable" data-href="/ui/endpoint?method={{ ep.method }}&path={{ ep.endpoint|urlencode }}">
           <td class="nowrap">
-            <div>{{ ui.method(ep.method) }} <span class="path cell-main">{{ ep.endpoint }}</span></div>
+            <div>{{ ui.endpoint_link(ep.method, ep.endpoint) }}</div>
             {% if ep.summary %}<div class="cell-sub" style="padding-left:62px">{{ ep.summary }}</div>{% endif %}
           </td>
-          <td>{% if ep.documented %}<span class="badge sev-low">Documented</span>{% else %}<span class="badge sev-medium">Undocumented</span>{% endif %}</td>
-          <td class="num">{{ ep.requests }}</td>
+          <td>{% if ep.documented %}<span class="badge tag-good">Documented</span>{% else %}<span class="badge sev-medium">Undocumented</span>{% endif %}</td>
+          <td class="num">{{ ep.requests|compact }}</td>
           <td class="num {{ 'status-err' if ep.error_rate >= 20 else ('status-warn' if ep.error_rate > 0) }}">{{ ep.error_rate }}%</td>
           <td class="num">{{ (ep.avg_latency_ms ~ ' ms') if ep.avg_latency_ms is not none else '—' }}</td>
           <td class="nowrap muted">{{ ep.last_seen|ago if ep.last_seen else 'never' }}</td>
           <td class="nowrap">
             {% if ep.open_drifts %}
               <a href="/ui/drifts?endpoint={{ ep.endpoint|urlencode }}&method={{ ep.method }}&status=active">{{ ui.severity(ep.drift_severity) }} <span class="small">{{ ep.open_drifts }} open</span></a>
-            {% elif ep.requests %}<span class="badge plain tag-info">Clean</span>
+            {% elif ep.requests %}<span class="badge plain tag-good">Clean</span>
             {% else %}<span class="muted small">no data</span>{% endif %}
           </td>
           <td class="nowrap" style="text-align:right">
             <button class="btn btn-sm" data-action="scan-endpoint" data-endpoint="{{ ep.endpoint }}" data-method="{{ ep.method }}" {{ 'disabled' if not ep.requests }}>Scan</button>
-            <a class="btn btn-sm btn-ghost" href="/ui/logs?endpoint={{ ep.endpoint|urlencode }}&method={{ ep.method }}">Logs</a>
-            {% if ep.requests %}<button class="btn btn-sm btn-ghost btn-danger" data-action="clear-logs" data-endpoint="{{ ep.endpoint }}" data-method="{{ ep.method }}" title="Delete captured traffic for this endpoint">Clear</button>{% endif %}
+            {% if ep.documented %}<a class="btn btn-sm btn-ghost" href="/ui/playground?op={{ (ep.method ~ ' ' ~ ep.endpoint)|urlencode }}{{ '&all=true' if show_all }}">Try</a>{% endif %}
           </td>
         </tr>
       {% endfor %}

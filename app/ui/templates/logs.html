@@ -6,10 +6,11 @@
 <div class="page-head">
   <div>
     <h1>Traffic logs</h1>
-    <p>Requests captured by the logging middleware for paths starting with <span class="mono">{{ settings.LOG_INCLUDE_PREFIXES|join(', ') }}</span>.</p>
+    <p>Requests captured for paths starting with <span class="mono">{{ settings.LOG_INCLUDE_PREFIXES|join(', ') }}</span>.
+      Sensitive fields are masked{% if settings.LOG_RETENTION_DAYS %} and logs older than {{ settings.LOG_RETENTION_DAYS }} days are removed automatically{% endif %}.</p>
   </div>
   <div class="actions">
-    <button class="btn" data-action="demo-traffic">Generate demo traffic</button>
+    {% if settings.DEMO_ENABLED %}<button class="btn" data-action="demo-traffic">Generate demo traffic</button>{% endif %}
     <button class="btn btn-danger" data-action="clear-logs"
       {% if filters.endpoint %}data-endpoint="{{ filters.endpoint }}"{% endif %}
       {% if filters.method %}data-method="{{ filters.method }}"{% endif %}>
@@ -20,7 +21,7 @@
 
 <div class="card">
   <form class="filters" method="get" action="/ui/logs" data-autosubmit>
-    <input class="input" type="search" name="endpoint" placeholder="Filter by path…" value="{{ filters.endpoint }}" data-search>
+    <input class="input" type="search" name="endpoint" placeholder="Filter by path…" value="{{ filters.endpoint }}" data-search aria-label="Filter by path">
     <select class="select" name="method" aria-label="Method">
       <option value="">Any method</option>
       {% for m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}<option value="{{ m }}" {{ 'selected' if filters.method == m }}>{{ m }}</option>{% endfor %}
@@ -36,39 +37,40 @@
 
   <div class="card-body flush">
     {% if logs %}
-    <div class="table-wrap">
-    <table class="table">
-      <thead><tr><th>Request</th><th>Status</th><th class="num">Latency</th><th>Route</th><th>Time</th></tr></thead>
-      <tbody>
-      {% for log in logs %}
-        <tr>
-          <td colspan="5" style="padding:0">
-            <details class="row-details">
-              <summary style="display:grid;grid-template-columns:minmax(260px,2fr) 80px 90px minmax(160px,1.5fr) 150px;align-items:center;padding:10px 18px;gap:8px">
-                <span>{{ ui.method(log.method) }} <span class="path">{{ log.endpoint }}</span></span>
-                <span>{{ ui.http_status(log.status_code) }}</span>
-                <span class="num">{{ log.latency_ms }} ms</span>
-                <span class="path muted">{{ log.route_path or '—' }}</span>
-                <span class="nowrap muted small" title="{{ log.created_at|dt }}">{{ log.created_at|ago }}</span>
-              </summary>
-              <div style="padding:0 18px 12px">
-                <div class="log-bodies">
-                  <div><h4>Request body</h4>{{ ui.code("req-" ~ log.id, log.request_json|pretty if log.request_json is not none else "—", "json") }}</div>
-                  <div><h4>Response body</h4>{{ ui.code("res-" ~ log.id, log.response_json|pretty if log.response_json is not none else "—", "json") }}</div>
-                </div>
-                <div class="small muted">{{ log.user_agent or 'unknown client' }}{% if log.client_ip %} · {{ log.client_ip }}{% endif %} · {{ log.created_at|dt }}</div>
-              </div>
-            </details>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    <div class="log-row small muted hide-mobile" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;background:var(--surface-2);border-bottom:1px solid var(--border)">
+      <span>Request</span><span>Status</span><span>Latency</span><span>Route</span><span>Time</span>
     </div>
+    {% for log in logs %}
+    <details class="row-details" style="border-bottom:1px solid var(--border)">
+      <summary class="log-row">
+        <span>{{ ui.method(log.method) }} <span class="path">{{ log.endpoint }}</span></span>
+        <span>{{ ui.http_status(log.status_code) }}</span>
+        <span class="small">{{ log.latency_ms }} ms</span>
+        <span class="path muted hide-mobile">{{ log.route_path or '—' }}</span>
+        <span class="nowrap muted small hide-mobile" title="{{ log.created_at|dt }}">{{ log.created_at|ago }}</span>
+      </summary>
+      <div style="padding:4px 18px 14px">
+        <div class="log-bodies">
+          <div><h4>Request body</h4>{{ ui.code("req-" ~ log.id, log.request_json|pretty if log.request_json is not none else "—", "json") }}</div>
+          <div><h4>Response body</h4>{{ ui.code("res-" ~ log.id, log.response_json|pretty if log.response_json is not none else "—", "json") }}</div>
+        </div>
+        <div class="actions" style="justify-content:space-between">
+          <span class="small muted">{{ log.user_agent or 'unknown client' }}{% if log.client_ip %} · {{ log.client_ip }}{% endif %} · {{ log.created_at|dt }}</span>
+          <span class="actions">
+            {% if log.route_path %}
+            <a class="btn btn-sm btn-ghost" href="/ui/endpoint?method={{ log.method }}&path={{ log.route_path|urlencode }}">Endpoint</a>
+            <button class="btn btn-sm" data-action="replay" data-method="{{ log.method }}" data-path="{{ log.endpoint }}" data-route="{{ log.route_path }}" data-body="{{ log.request_json|pretty if log.request_json is not none else '' }}">Replay in playground</button>
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </details>
+    {% endfor %}
     {{ ui.pagination(pager) }}
     {% else %}
       {% call ui.empty("No traffic captured", "Call your API (or generate demo traffic) and requests will appear here.") %}
-        <button class="btn btn-primary" data-action="demo-traffic">Generate demo traffic</button>
+        {% if settings.DEMO_ENABLED %}<button class="btn btn-primary" data-action="demo-traffic">Generate demo traffic</button>{% endif %}
+        <a class="btn" href="/ui/playground">Open the playground</a>
       {% endcall %}
     {% endif %}
   </div>

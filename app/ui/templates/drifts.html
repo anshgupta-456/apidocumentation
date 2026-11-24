@@ -6,11 +6,11 @@
 <div class="page-head">
   <div>
     <h1>Drift events</h1>
-    <p>Every mismatch between the documented contract and real traffic, with explanation and fixes.</p>
+    <p>Every mismatch between the documented contract and real traffic — triage, explain and fix.</p>
   </div>
   <div class="actions">
-    <a class="btn" href="/drift-events/export?format=csv{{ '&' ~ export_query if export_query }}">Export CSV</a>
-    <a class="btn" href="/drift-events/export?format=json{{ '&' ~ export_query if export_query }}">Export JSON</a>
+    <a class="btn" href="/drift-events/export?format=csv{{ '&' ~ export_query if export_query }}" download>Export CSV</a>
+    <a class="btn" href="/drift-events/export?format=json{{ '&' ~ export_query if export_query }}" download>Export JSON</a>
     <button class="btn btn-primary" data-action="scan-all">Scan all endpoints</button>
   </div>
 </div>
@@ -23,7 +23,7 @@
       {% endfor %}
     </div>
     <input type="hidden" name="status" value="{{ filters.status }}">
-    <input class="input" type="search" name="endpoint" placeholder="Filter by endpoint…" value="{{ filters.endpoint }}" data-search>
+    <input class="input" type="search" name="endpoint" placeholder="Filter by endpoint…" value="{{ filters.endpoint }}" data-search aria-label="Filter by endpoint">
     <select class="select" name="severity" aria-label="Severity">
       <option value="">Any severity</option>
       {% for s in ['high', 'medium', 'low'] %}<option value="{{ s }}" {{ 'selected' if filters.severity == s }}>{{ s|capitalize }}</option>{% endfor %}
@@ -40,12 +40,16 @@
     {% if events %}
     <div class="table-wrap">
     <table class="table">
-      <thead><tr><th>Severity</th><th>Endpoint</th><th class="num">Issues</th><th>Status</th><th class="num">Seen</th><th>Detected</th><th>Last seen</th><th>Engine</th></tr></thead>
+      <thead><tr>
+        <th class="check-col"><input type="checkbox" data-select-all aria-label="Select all events on this page"></th>
+        <th>Severity</th><th>Endpoint</th><th class="num">Issues</th><th>Status</th><th class="num">Seen</th><th>Detected</th><th>Last seen</th><th>Engine</th>
+      </tr></thead>
       <tbody>
       {% for ev in events %}
         <tr class="clickable" data-href="/ui/drift/{{ ev.id }}">
+          <td class="check-col"><input type="checkbox" data-select-row value="{{ ev.id }}" aria-label="Select event"></td>
           <td>{{ ui.severity(ev.severity) }}</td>
-          <td><a href="/ui/drift/{{ ev.id }}" style="color:inherit">{{ ui.method(ev.method) }} <span class="path">{{ ev.endpoint }}</span></a></td>
+          <td class="nowrap"><a href="/ui/drift/{{ ev.id }}" class="row-link">{{ ui.method(ev.method) }} <span class="path">{{ ev.endpoint }}</span></a></td>
           <td class="num">{{ ev.issue_count }}</td>
           <td>{{ ui.status(ev.status) }}</td>
           <td class="num">{{ ev.occurrences }}×</td>
@@ -64,5 +68,13 @@
       {% endcall %}
     {% endif %}
   </div>
+</div>
+
+<div class="bulk-bar" data-bulk-bar hidden>
+  <span data-bulk-count>0 selected</span>
+  <button class="btn btn-sm" data-action="bulk" data-status="acknowledged">Acknowledge</button>
+  <button class="btn btn-sm" data-action="bulk" data-status="resolved">Resolve</button>
+  <button class="btn btn-sm" data-action="bulk" data-status="ignored">Ignore</button>
+  <button class="btn btn-sm" data-action="bulk" data-delete="true">Delete</button>
 </div>
 {% endblock %}

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}Dashboard{% endblock %} · API Contract Validator</title>
   <script>
     (function () {
@@ -11,16 +12,21 @@
       document.documentElement.dataset.theme = dark ? "dark" : "light";
     })();
   </script>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>AC</text></svg>">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}">
 </head>
 <body>
+<div class="progress" id="progress"></div>
+<div class="scrim"></div>
 <div class="layout">
-  <aside class="sidebar">
-    <a href="/ui" class="brand" style="text-decoration:none">
-      <div class="brand-logo">AC</div>
+  <aside class="sidebar" aria-label="Main navigation">
+    <a href="/ui" class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      </div>
       <div>
-        <div class="brand-name">API Contract<br>Validator</div>
+        <div class="brand-name">Contract Validator</div>
+        <div class="brand-sub">API drift monitoring</div>
       </div>
     </a>
     <nav class="nav">
@@ -41,7 +47,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         Traffic logs
       </a>
-      <div class="nav-label">Contract</div>
+      <div class="nav-label">Build</div>
+      <a href="/ui/playground" class="{{ 'active' if active == 'playground' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9V3z"/></svg>
+        API playground
+      </a>
       <a href="/ui/openapi" class="{{ 'active' if active == 'openapi' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
         OpenAPI versions
@@ -50,8 +60,20 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 16 4-4-4-4M6 8l-4 4 4 4m8.5-12-5 16"/></svg>
         API reference
       </a>
+      <div class="nav-label">System</div>
+      <a href="/ui/settings" class="{{ 'active' if active == 'settings' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        Settings
+      </a>
     </nav>
     <div class="sidebar-footer">
+      {% if settings.auth_enabled and user %}
+      <div class="user">
+        <span class="avatar">{{ (user or 'a')[:1] }}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis">{{ user }}</span>
+        <button data-action="logout" title="Sign out">Sign out</button>
+      </div>
+      {% endif %}
       <div class="row"><span><span class="dot"></span>v{{ settings.VERSION }}</span>
         <span title="Explanation engine">{{ 'AI · Groq' if ai_provider == 'groq' else 'Rule-based AI' }}</span></div>
     </div>
@@ -59,20 +81,29 @@
 
   <div class="main">
     <header class="topbar">
-      <div class="crumbs">{% block crumbs %}<span class="current">Dashboard</span>{% endblock %}</div>
+      <div class="crumbs">
+        <button class="btn btn-ghost icon-btn menu-btn" data-action="toggle-nav" aria-label="Open navigation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        {% block crumbs %}<span class="current">Dashboard</span>{% endblock %}
+      </div>
       <div class="topbar-actions">
-        <span class="small muted" style="margin-right:4px">Press <span class="kbd">/</span> to search</span>
+        <button class="search-trigger" data-action="open-palette" aria-label="Search and jump to">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <span class="label">Search or jump to…</span>
+          <span class="kbd">Ctrl K</span>
+        </button>
         <button class="btn btn-ghost icon-btn" data-action="toggle-theme" title="Toggle dark mode" aria-label="Toggle dark mode">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
       </div>
     </header>
-    <main class="content">
+    <main class="content" id="content">
       {% block content %}{% endblock %}
     </main>
   </div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/app.js?v={{ asset_v }}"></script>
 </body>
 </html>

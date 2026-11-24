@@ -21,21 +21,30 @@ OpenAPI patch plus matching Pydantic models.
 
 | Area | What you get |
 | --- | --- |
-| **Dashboard** | Web UI at `/ui`: KPIs, 7-day traffic chart, open drift by severity, busiest endpoints, light/dark mode |
+| **Dashboard** | Contract health score, KPI tiles, interactive traffic / latency charts (24h · 7d · 30d), status-code breakdown, live auto-refresh, light/dark mode, mobile layout |
+| **Endpoint pages** | Per-operation traffic, latency, status codes, field-by-field *contract vs. reality* table, drift history and recent requests |
+| **API playground** | Send real requests from the browser with path/query params and example bodies generated from the spec; replay any captured request |
+| **Command palette** | `Ctrl K` to jump to any page, endpoint or action; `g d`, `g e`, `g x`… shortcuts |
 | **Deep drift detection** | Nested objects, arrays, top-level lists, `$ref`/`allOf`/`anyOf`, nullable & required checks, integer ⊂ number |
 | **Request *and* response drift** | Detects undocumented fields clients send, missing required fields, wrong types — not only response changes |
 | **Path templates** | `/api/users/42` is matched to `/api/users/{user_id}` automatically |
-| **Smart severity** | Only real contract violations are reported (an optional field that is always present is *not* drift) |
-| **Event lifecycle** | `open → acknowledged → resolved / ignored`, notes, de-duplication (`seen 5×`) instead of duplicate events |
+| **Event lifecycle** | `open → acknowledged → resolved / ignored`, notes, bulk actions, de-duplication (`seen 5×`) |
 | **Explanations** | Groq LLaMA 3.1 when `GROQ_API_KEY` is set, deterministic rule-based engine otherwise — works fully offline |
 | **Patches** | Valid OpenAPI fragment derived from observed traffic + generated Pydantic models; one-click apply to `openapi.generated.json` |
-| **Spec versioning** | Snapshots stored only when the spec changes, version diff with **breaking-change** detection, download any version |
-| **Traffic explorer** | Browse/filter captured requests with request & response bodies, clear logs per endpoint |
-| **Coverage** | Documented vs. observed endpoints, error rate, average/p95 latency |
-| **Exports** | Drift events as CSV or JSON |
-| **Demo mode** | One click generates realistic traffic, including a legacy endpoint that really drifts |
+| **Spec versioning** | Snapshots stored only when the spec changes, version diff with **breaking-change** detection |
+| **Automation** | Scheduled drift scans, log retention, Slack/Discord/Teams webhook alerts for new drift |
+| **Security** | Optional login (signed HttpOnly cookie, rate-limited), `X-API-Key` for scripts, sensitive fields masked before logs are stored |
+| **Deploy anywhere** | Dockerfile, Render blueprint, Procfile, `postgres://` URLs handled, health check, GitHub Actions CI |
 | **Portable** | PostgreSQL (JSONB/UUID) in production, SQLite with zero setup locally; existing DBs are migrated automatically |
-| **Tested** | 21 pytest tests covering the engine, the API and every UI page |
+| **Tested** | 36 pytest tests covering the engine, auth, alerts, retention, the API and every UI page |
+
+---
+
+## Hosting
+
+The backend serves the dashboard too, so you deploy **one service + one PostgreSQL database**.
+Set `DATABASE_URL`, `ADMIN_PASSWORD` and `SECRET_KEY` on your host. Step-by-step guides for
+Render, Railway, Docker and Fly.io are in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ---
 
@@ -55,6 +64,7 @@ Interactive API docs live at **/docs**.
 
 Without `DATABASE_URL` the app uses a local SQLite file (`api_validator.db`).
 Without `GROQ_API_KEY` explanations come from the built-in rule-based engine.
+Without `ADMIN_PASSWORD` the dashboard is open (fine locally — always set it when hosting).
 
 ### Run the tests
 
@@ -64,19 +74,11 @@ pytest -q
 
 ---
 
-## Configuration (`.env`)
+## Configuration
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DATABASE_URL` | `sqlite:///./api_validator.db` | Any SQLAlchemy URL, e.g. `postgresql://user:pass@host/db` |
-| `GROQ_API_KEY` | – | Enables AI explanations |
-| `AI_MODEL` | `llama-3.1-8b-instant` | Groq model |
-| `AI_ENABLED` | `true` | Set `false` to force the rule-based engine |
-| `LOG_INCLUDE_PREFIXES` | `/api/` | Comma-separated path prefixes that are captured |
-| `LOG_MAX_BODY_BYTES` | `65536` | Larger bodies are not stored |
-| `INFERENCE_SAMPLE_LIMIT` | `500` | Most recent samples used per endpoint |
-| `GENERATED_SPEC_PATH` | `openapi.generated.json` | Output of "Apply patch" |
-| `CORS_ORIGINS` | – | Comma-separated allowed origins |
+All settings are environment variables — see [`.env.example`](.env.example) and the table in
+[DEPLOYMENT.md](DEPLOYMENT.md#environment-variables). The **Settings** page in the dashboard
+shows the active configuration and a production checklist.
 
 ---
 
@@ -91,6 +93,7 @@ pytest -q
 | `GET` | `/drift-events/export?format=csv\|json` | Download events |
 | `GET` | `/drift-events/{id}` | Full event: issues, explanation, patches, schemas |
 | `PATCH` | `/drift-events/{id}` | `{"status": "resolved", "notes": "..."}` |
+| `POST` | `/drift-events/bulk` | `{"ids": [...], "status": "resolved"}` or `{"ids": [...], "delete": true}` |
 | `DELETE` | `/drift-events/{id}` | Delete an event |
 
 ### Patches
@@ -109,12 +112,28 @@ pytest -q
 | `GET` | `/openapi-specs/{id}/download` | Raw spec JSON |
 | `GET` | `/openapi-specs/diff?base=&target=` | Diff two versions (`target` defaults to the live spec) |
 
+### Auth
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/auth/login` | `{"username", "password"}` → session cookie |
+| `POST` | `/auth/logout` | Clear the session |
+| `GET` | `/auth/me` | Current user |
+
+When `ADMIN_PASSWORD` is set every endpoint below (except `/health` and the monitored `/api/...`
+routes) needs a session cookie or `X-API-Key: <ADMIN_API_KEY>`.
+
 ### Traffic & system
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Database + explanation engine status |
-| `GET` | `/stats` | Dashboard numbers |
+| `GET` | `/health` | Database + explanation engine status (public) |
+| `GET` | `/stats?range=24h\|7d\|30d` | Dashboard numbers, time series, status codes, health score |
 | `GET` | `/endpoints?all=` | Coverage, traffic, error rate, latency, open drift per endpoint |
+| `GET` | `/endpoints/detail?path=&method=&range=` | One operation: traffic, latency, schema comparison, drift history |
+| `GET` | `/playground/operations?all=` | Request templates generated from the spec |
+| `GET` | `/system/config` | Active (non-secret) configuration and background job status |
+| `POST` | `/system/scan` | Run the scheduled scan now |
+| `POST` | `/system/cleanup?days=` | Delete old captured traffic |
+| `POST` | `/alerts/test` | Send a test webhook alert |
 | `GET` | `/api-logs?endpoint=&method=&status=success\|error\|<code>` | Captured traffic |
 | `GET` | `/api-logs/{id}` | One captured request |
 | `DELETE` | `/api-logs?endpoint=&method=` | Clear captured traffic |
@@ -172,8 +191,9 @@ curl -X POST "localhost:8000/patch/apply?event_id=<id>"
 
 ```
 app/
-├── main.py                          # app setup, middleware, routers, static files
+├── main.py                          # app setup, middleware, routers, auth wiring, scheduler
 ├── config.py                        # environment-driven settings
+├── auth.py                          # optional login: signed session cookie, API key, rate limit
 ├── database/
 │   ├── base.py
 │   ├── models.py                    # ApiLog, InferredSchema, OpenAPISpec, DriftEvents
@@ -181,11 +201,12 @@ app/
 ├── middleware/
 │   └── logging_middleware.py        # pure ASGI traffic capture (streaming-safe)
 ├── routes/
+│   ├── auth_routes.py               # login / logout / me
 │   ├── demo_routes.py               # monitored demo API + traffic generator
 │   ├── drift_routes.py              # detection, scan, events, export
 │   ├── openapi_routes.py            # snapshots, versions, diff, download
 │   ├── patch_routes.py              # patch retrieval / apply
-│   └── traffic_routes.py            # health, stats, endpoints, logs
+│   └── traffic_routes.py            # health, stats, endpoints, playground, logs, system jobs
 ├── schemas/
 │   ├── api_schemas.py
 │   └── user_schema.py
@@ -197,12 +218,17 @@ app/
 │   ├── patch_generation_service.py  # OpenAPI patch + Pydantic model generation
 │   ├── openapi_patch_service.py     # merge patch into spec
 │   ├── spec_diff_service.py         # version diff + breaking changes
-│   └── traffic_service.py           # coverage, stats, log queries
+│   ├── traffic_service.py           # coverage, time series, endpoint detail, log queries
+│   ├── playground_service.py        # request templates + example bodies from the spec
+│   ├── alert_service.py             # webhook alerts
+│   └── job_service.py               # scheduled scans + log retention
 ├── utils/
 │   └── schema_utils.py              # flattened field-path helpers
 └── ui/
     ├── ui_routes.py
     ├── static/                      # app.css, app.js (no build step)
-    └── templates/                   # dashboard, endpoints, drifts, drift detail, openapi, logs
+    └── templates/                   # dashboard, endpoints, endpoint, drifts, playground, settings, login…
 tests/                               # pytest suite
+Dockerfile · render.yaml · Procfile  # deployment
+DEPLOYMENT.md                        # hosting guide
 ```
