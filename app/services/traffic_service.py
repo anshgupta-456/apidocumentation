@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import FastAPI
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, func, literal_column, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -35,11 +35,15 @@ def _percentile(values, pct):
 
 
 def _bucket_expr(bucket: str):
+    """Time-bucket expression. Constants are inlined (not bound) so SELECT and GROUP BY
+    render identical SQL on every driver."""
     column = ApiLog.created_at
+    hourly = bucket == "hour"
     if engine.dialect.name == "postgresql":
-        fmt = "YYYY-MM-DD HH24:00:00" if bucket == "hour" else "YYYY-MM-DD"
-        return func.to_char(func.date_trunc(bucket, func.timezone("UTC", column)), fmt)
-    return func.strftime("%Y-%m-%d %H:00:00" if bucket == "hour" else "%Y-%m-%d", column)
+        unit = literal_column("'hour'" if hourly else "'day'")
+        fmt = literal_column("'YYYY-MM-DD HH24:00:00'" if hourly else "'YYYY-MM-DD'")
+        return func.to_char(func.date_trunc(unit, func.timezone(literal_column("'UTC'"), column)), fmt)
+    return func.strftime(literal_column("'%Y-%m-%d %H:00:00'" if hourly else "'%Y-%m-%d'"), column)
 
 
 def _route_filter(path: str, method: str):

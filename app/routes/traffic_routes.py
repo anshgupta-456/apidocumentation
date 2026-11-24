@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -10,11 +10,12 @@ from app.database.session import check_db, get_db
 from app.services.alert_service import AlertService
 from app.services.job_service import JobState, cleanup_logs, run_scan
 from app.services.playground_service import PlaygroundService
-from app.services.traffic_service import RANGES, TrafficService
+from app.services.traffic_service import TrafficService
 
 # Public router (no auth): used by load balancers / uptime monitors.
 public_router = APIRouter(tags=["System"])
 router = APIRouter(tags=["Traffic & system"])
+RangeKey = Literal["24h", "7d", "30d"]
 
 
 @public_router.get("/health")
@@ -88,7 +89,7 @@ def test_alert():
 
 
 @router.get("/stats")
-def stats(request: Request, range: str = Query("24h", enum=list(RANGES)), db: Session = Depends(get_db)):
+def stats(request: Request, range: RangeKey = "24h", db: Session = Depends(get_db)):
     """Aggregated numbers that power the dashboard."""
     return TrafficService.stats(request.app, db, range)
 
@@ -104,7 +105,7 @@ def endpoint_detail(
     request: Request,
     path: str,
     method: str,
-    range: str = Query("24h", enum=list(RANGES)),
+    range: RangeKey = "24h",
     db: Session = Depends(get_db),
 ):
     """Everything about one operation: traffic, latency, status codes, schema comparison, drift history."""

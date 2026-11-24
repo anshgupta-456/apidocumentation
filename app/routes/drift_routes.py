@@ -2,18 +2,21 @@ import csv
 import io
 import json
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.database.models import DRIFT_STATUSES, SEVERITIES, DriftEvents, utcnow
+from app.database.models import DriftEvents, utcnow
 from app.database.session import get_db
 from app.schemas.api_schemas import BulkDriftUpdate, DriftStatusUpdate, ScanRequest
 from app.services.drift_detection_service import SchemaDriftService
 
 router = APIRouter(tags=["Drift detection"])
+
+SeverityFilter = Optional[Literal["low", "medium", "high"]]
+StatusFilter = Optional[Literal["open", "acknowledged", "resolved", "ignored", "active"]]
 
 
 @router.get("/detect-drift/{endpoint:path}")
@@ -68,8 +71,8 @@ def _filtered_events(
 
 @router.get("/drift-events")
 def list_drift_events(
-    severity: Optional[str] = Query(None, enum=list(SEVERITIES)),
-    status: Optional[str] = Query(None, enum=list(DRIFT_STATUSES) + ["active"]),
+    severity: SeverityFilter = None,
+    status: StatusFilter = Query(None, description="'active' = open + acknowledged"),
     endpoint: Optional[str] = Query(None, description="Substring match on the endpoint path"),
     method: Optional[str] = None,
     limit: int = Query(50, ge=1, le=500),
@@ -84,9 +87,9 @@ def list_drift_events(
 
 @router.get("/drift-events/export")
 def export_drift_events(
-    format: str = Query("csv", enum=["csv", "json"]),
-    severity: Optional[str] = Query(None, enum=list(SEVERITIES)),
-    status: Optional[str] = Query(None, enum=list(DRIFT_STATUSES) + ["active"]),
+    format: Literal["csv", "json"] = "csv",
+    severity: SeverityFilter = None,
+    status: StatusFilter = Query(None, description="'active' = open + acknowledged"),
     endpoint: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
